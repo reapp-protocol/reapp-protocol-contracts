@@ -1,0 +1,19 @@
+name: Build and Release
+on:
+  push:
+    tags:
+      - 'v*'
+permissions:
+  id-token: write
+  contents: write
+  attestations: write
+jobs:
+  release-mandate-registry:
+    uses: stellar-expert/soroban-build-workflow/.github/workflows/release.yml@main
+    with:
+      release_name: ${{ github.ref_name }}
+      release_description: 'MandateRegistry contract release'
+      relative_path: 'contracts/mandate-registry'
+      package: 'mandate-registry'
+    secrets:
+      release_token: ${{ secrets.GITHUB_TOKEN }}
