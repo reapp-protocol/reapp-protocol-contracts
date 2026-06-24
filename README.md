@@ -20,6 +20,38 @@ Public methods:
 
 Built with `soroban-sdk` v22 for the `wasm32v1-none` target.
 
+## Deployed contract
+
+The canonical MandateRegistry is live on **Stellar testnet**:
+
+| | |
+|---|---|
+| Contract id | [`CB4KOTLGMM5JEPFPU6QBJLADIBP3RSGUX44FOYTFRICNXKKFPYIW7ZOA`](https://stellar.expert/explorer/testnet/contract/CB4KOTLGMM5JEPFPU6QBJLADIBP3RSGUX44FOYTFRICNXKKFPYIW7ZOA) |
+| Network | Stellar testnet |
+| WASM hash | `4eb1b943…d8c69e` |
+| Deployed | 2026-06-19, source-verified on StellarExpert against this repo |
+
+Confirm the deployed bytecode matches this source:
+
+```
+stellar contract fetch --id CB4KOTLGMM5JEPFPU6QBJLADIBP3RSGUX44FOYTFRICNXKKFPYIW7ZOA --network testnet --out-file onchain.wasm
+shasum -a 256 onchain.wasm   # 4eb1b943…d8c69e
+```
+
+Mainnet is future work.
+
+## Protocol, SDK, and proof
+
+This repo is just the enforcement contract. The full protocol — the
+`@reapp-sdk/core` and `@reapp-sdk/stellar` packages, the x402 round-trip, the
+reference apps, the security audits, and the clause-by-clause on-chain proof — lives
+in [`reapp-protocol/reapp-protocol`](https://github.com/reapp-protocol/reapp-protocol):
+
+- [The contract, end to end](https://github.com/reapp-protocol/reapp-protocol/blob/main/docs/mandate-registry-contract.md) — every method, on-chain activity, and deployment history.
+- [The SDK on npm](https://github.com/reapp-protocol/reapp-protocol/blob/main/docs/reapp-sdk-npm.md) — the under-10-line payment flow.
+- [The x402 round-trip](https://github.com/reapp-protocol/reapp-protocol/blob/main/docs/x402-roundtrip.md) — pay-per-resource over HTTP 402.
+- [Security audits](https://github.com/reapp-protocol/reapp-protocol/tree/main/security) — contract, SDK, and x402 adversarial reviews.
+
 ## Source verification
 
 Releases are built by the
