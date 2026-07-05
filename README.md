@@ -39,9 +39,25 @@ uniform price, settled atomically, with an allocation anyone can recompute:
 
 Built with `soroban-sdk` v22 for the `wasm32v1-none` target.
 
-## Deployed contract
+## Deployed contracts
 
-The canonical MandateRegistry is live on **Stellar testnet**:
+The composite MandateRegistry (clearing pools) is live on **Stellar testnet**:
+
+| | |
+|---|---|
+| Contract id | [`CBALARHTO5D7JLWHZ5KST4QNIRC64JI5H3DQDHMIUBSRLLOVS6FCWOQX`](https://stellar.expert/explorer/testnet/contract/CBALARHTO5D7JLWHZ5KST4QNIRC64JI5H3DQDHMIUBSRLLOVS6FCWOQX) |
+| Network | Stellar testnet |
+| WASM hash | `6333c20b…f16f44` |
+| Deployed | 2026-07-05 from the v0.2.0 release artifact, source-verified on StellarExpert against this repo |
+
+Confirm the deployed bytecode matches this source:
+
+```
+stellar contract fetch --id CBALARHTO5D7JLWHZ5KST4QNIRC64JI5H3DQDHMIUBSRLLOVS6FCWOQX --network testnet --out-file onchain.wasm
+shasum -a 256 onchain.wasm   # 6333c20b…f16f44
+```
+
+The original single-mandate MandateRegistry remains live:
 
 | | |
 |---|---|
