@@ -79,13 +79,13 @@ Mainnet is future work.
 
 This repo is just the enforcement contract. The full protocol — the
 `@reapp-sdk/core` and `@reapp-sdk/stellar` packages, the x402 round-trip, the
-reference apps, the security audits, and the clause-by-clause on-chain proof — lives
+reference apps, the security gate checks, and the clause-by-clause on-chain proof — lives
 in [`reapp-protocol/reapp-protocol`](https://github.com/reapp-protocol/reapp-protocol):
 
 - [The contract, end to end](https://github.com/reapp-protocol/reapp-protocol/blob/main/docs/mandate-registry-contract.md) — every method, on-chain activity, and deployment history.
 - [The SDK on npm](https://github.com/reapp-protocol/reapp-protocol/blob/main/docs/reapp-sdk-npm.md) — the under-10-line payment flow.
 - [The x402 round-trip](https://github.com/reapp-protocol/reapp-protocol/blob/main/docs/x402-roundtrip.md) — pay-per-resource over HTTP 402.
-- [Security audits](https://github.com/reapp-protocol/reapp-protocol/tree/main/security) — contract, SDK, and x402 adversarial reviews.
+- [Security gate checks](https://github.com/reapp-protocol/reapp-protocol/tree/main/security) — contract, SDK, and x402 adversarial reviews.
 
 ## Source verification
 
