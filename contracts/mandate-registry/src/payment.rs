@@ -7,7 +7,7 @@ use soroban_sdk::token::TokenClient;
 use soroban_sdk::{Address, BytesN, Env};
 
 use crate::error::Error;
-use crate::mandate::{Mandate, Status};
+use crate::mandate::{Mandate, PoolState, Status};
 use crate::{events, storage};
 
 /// The single source of enforcement truth. Every check the protocol makes lives
@@ -21,6 +21,13 @@ fn check(env: &Env, m: &Mandate, amount: i128, merchant: &Address) -> Result<(),
         Status::Revoked => return Err(Error::MandateRevoked),
         Status::Exhausted => return Err(Error::BudgetExceeded),
         Status::Active => {}
+    }
+    // A Committed child's allowance is spoken for by its pool; a Captured
+    // child's remaining budget stays locked to the pool (simplest safe rule).
+    // Unlinked/Released pooled children spend solo within their own limits.
+    match m.pool_state {
+        PoolState::Committed | PoolState::Captured => return Err(Error::MandatePooled),
+        PoolState::Unlinked | PoolState::Released => {}
     }
     // Expired at-or-after the expiry instant. Symmetric with register_mandate,
     // which requires expiry > now — a mandate is valid strictly while now < expiry.

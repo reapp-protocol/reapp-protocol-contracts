@@ -68,6 +68,8 @@ impl World {
             &MAX,
             &EXPIRY,
             &self.id,
+            &None,
+            &soroban_sdk::Vec::new(&self.env),
         );
     }
     fn balance(&self, who: &Address) -> i128 {
@@ -91,6 +93,8 @@ fn happy_path_runs_every_method() {
         &MAX,
         &EXPIRY,
         &w.id,
+        &None,
+        &soroban_sdk::Vec::new(&w.env),
     );
     assert_eq!(returned, w.id);
 
@@ -143,7 +147,9 @@ fn duplicate_register_rejected() {
             &w.asset,
             &MAX,
             &EXPIRY,
-            &w.id
+            &w.id,
+            &None,
+            &soroban_sdk::Vec::new(&w.env),
         ),
         Err(Ok(Error::AlreadyExists))
     );
@@ -216,8 +222,7 @@ fn out_of_scope_merchant_rejected() {
     w.register();
     let attacker = Address::generate(&w.env);
     assert_eq!(
-        w.client()
-            .try_validate_mandate(&w.id, &SPEND, &attacker),
+        w.client().try_validate_mandate(&w.id, &SPEND, &attacker),
         Err(Ok(Error::MerchantOutOfScope))
     );
 }
@@ -243,7 +248,9 @@ fn register_with_past_expiry_rejected() {
             &w.asset,
             &MAX,
             &(NOW - 1),
-            &w.id
+            &w.id,
+            &None,
+            &soroban_sdk::Vec::new(&w.env),
         ),
         Err(Ok(Error::MandateExpired))
     );
@@ -296,7 +303,17 @@ fn register_requires_user_auth() {
     let id = BytesN::from_array(&env, &[2u8; 32]);
 
     // No auths mocked → user.require_auth() must fail.
-    let r = client.try_register_mandate(&user, &agent, &merchant, &asset, &MAX, &EXPIRY, &id);
+    let r = client.try_register_mandate(
+        &user,
+        &agent,
+        &merchant,
+        &asset,
+        &MAX,
+        &EXPIRY,
+        &id,
+        &None,
+        &soroban_sdk::Vec::new(&env),
+    );
     assert!(r.is_err());
 }
 

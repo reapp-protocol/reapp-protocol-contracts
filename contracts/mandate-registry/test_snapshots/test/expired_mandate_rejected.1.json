@@ -112,6 +112,10 @@
                 },
                 {
                   "bytes": "0101010101010101010101010101010101010101010101010101010101010101"
+                },
+                "void",
+                {
+                  "vec": []
                 }
               ]
             }
@@ -272,6 +276,32 @@
                       },
                       "val": {
                         "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAITA4"
+                      }
+                    },
+                    {
+                      "key": {
+                        "symbol": "pool_id"
+                      },
+                      "val": "void"
+                    },
+                    {
+                      "key": {
+                        "symbol": "pool_state"
+                      },
+                      "val": {
+                        "vec": [
+                          {
+                            "symbol": "Unlinked"
+                          }
+                        ]
+                      }
+                    },
+                    {
+                      "key": {
+                        "symbol": "price_schedule"
+                      },
+                      "val": {
+                        "vec": []
                       }
                     },
                     {

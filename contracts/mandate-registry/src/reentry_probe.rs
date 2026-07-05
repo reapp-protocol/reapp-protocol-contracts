@@ -59,6 +59,8 @@ fn reentrancy_via_evil_token() {
         &50_000_000i128,
         &10_000u64,
         &id,
+        &None,
+        &soroban_sdk::Vec::new(&env),
     );
 
     // Configure evil token to reenter.

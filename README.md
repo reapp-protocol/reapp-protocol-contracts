@@ -6,17 +6,36 @@ the bytecode deployed on Stellar matches this source.
 ## MandateRegistry
 
 `contracts/mandate-registry` is REAPP's enforcement layer. It is the entire
-protocol and is small by design: a small interface is auditable. Money moves
-only through `execute_payment`, which validates and consumes a mandate atomically
-before transferring. The SDK is untrusted; this contract is the source of truth.
+protocol and is small by design: a small interface is easy to review. Money
+moves only through `execute_payment` (single mandates) and `clear_pool`
+(composite capture), each of which validates and consumes atomically before
+transferring. The SDK is untrusted; this contract is the source of truth.
 
 Public methods:
 
-- `register_mandate` — store a user-signed mandate.
+- `register_mandate` — store a user-signed mandate; optionally binds it to a
+  clearing pool with a price schedule.
 - `validate_mandate` — read-only preflight; would a spend be permitted right now?
-- `execute_payment` — the only money path; atomic validate, consume, and transfer.
-- `revoke_mandate` — user withdraws consent.
+- `execute_payment` — the single-mandate money path; atomic validate, consume,
+  and transfer.
+- `revoke_mandate` — user withdraws consent; frees a committed pool slot.
 - `get_mandate` — read the stored mandate.
+
+Composite mandates (clearing pools) — many buyers clear one deal at a single
+uniform price, settled atomically, with an allocation anyone can recompute:
+
+- `register_pool` — put a vendor minimum (units + order value) and a hard close
+  time on-chain; the pool id is the hash of those exact terms.
+- `commit_child` — link a pooled mandate as a committed member (permissionless;
+  revocable until the close).
+- `evict_child` — remove an objectively ineligible member (permissionless; can
+  never evict an eligible one).
+- `clear_pool` — close the auction: settle every leg in one transaction, or
+  abort so nobody pays.
+- `simulate_clear` — read-only: the exact outcome capture would execute; the
+  same pure clearing function over the same on-chain state, so the organizer
+  holds no discretion over price or allocation.
+- `get_pool`, `get_pool_members` — read pool state.
 
 Built with `soroban-sdk` v22 for the `wasm32v1-none` target.
 
