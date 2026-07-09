@@ -7,7 +7,7 @@ the bytecode deployed on Stellar matches this source.
 
 | Folder | Purpose | Verified testnet contract |
 |---|---|---|
-| [`contracts/simple`](contracts/simple) | Simple mandate contract used for the T2 / Milestone 2 deliverables and the first successful source-verified submission. | [`CB4KOTLGMM5JEPFPU6QBJLADIBP3RSGUX44FOYTFRICNXKKFPYIW7ZOA`](https://stellar.expert/explorer/testnet/contract/CB4KOTLGMM5JEPFPU6QBJLADIBP3RSGUX44FOYTFRICNXKKFPYIW7ZOA) |
+| [`contracts/simple`](contracts/simple) | Simple mandate contract used for the first successful source-verified submission. | [`CB4KOTLGMM5JEPFPU6QBJLADIBP3RSGUX44FOYTFRICNXKKFPYIW7ZOA`](https://stellar.expert/explorer/testnet/contract/CB4KOTLGMM5JEPFPU6QBJLADIBP3RSGUX44FOYTFRICNXKKFPYIW7ZOA) |
 | [`contracts/composites`](contracts/composites) | Composite mandate contract with clearing pools. This is the main forward-looking contract folder. | [`CBALARHTO5D7JLWHZ5KST4QNIRC64JI5H3DQDHMIUBSRLLOVS6FCWOQX`](https://stellar.expert/explorer/testnet/contract/CBALARHTO5D7JLWHZ5KST4QNIRC64JI5H3DQDHMIUBSRLLOVS6FCWOQX) |
 
 Both contracts keep the same crate name, `mandate-registry`, because they are two
