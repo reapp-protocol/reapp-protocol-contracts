@@ -66,6 +66,47 @@ contract, then adds a pure clearing core. Pool allocation is computed from
 on-chain state, so the originator sets terms once and cannot later choose who
 pays or at what price.
 
+## Enforcement Architecture
+
+```mermaid
+flowchart LR
+    Terms["Pool terms\noriginator, merchant, asset,\nthresholds, deadline, nonce"]
+    PoolId["register_pool\npool id = hash(terms)"]
+    Mandates["Pool-bound mandates\nuser auth + demand curves"]
+    Commit["commit_child\nobjective eligibility"]
+    Builder["build_child_views\nstored state + live token reads"]
+    Pure["clearing::clear\npure allocation function"]
+    Outcome["ClearOutcome\nfires, p*, allocations"]
+    Persist["Persist terminal state first\npool + child mandates"]
+    Transfer["SEP-41 transfer_from\nallocation legs"]
+    Merchant["Merchant receives settlement"]
+    Sim["simulate_clear\nsame builder + same pure function"]
+    Abort["No fire\nrelease committed children"]
+    Stops["Bad terms / ineligible child /\nwrong asset / wrong merchant\nrejected before capture"]
+
+    Terms --> PoolId
+    PoolId --> Mandates --> Commit --> Builder --> Pure --> Outcome
+    Builder --> Sim --> Pure
+    Outcome -->|"fires"| Persist --> Transfer --> Merchant
+    Outcome -->|"no fire"| Abort
+    Commit --> Stops
+    Builder --> Stops
+
+    classDef core fill:#052e16,stroke:#22c55e,color:#f9fafb
+    classDef pure fill:#312e81,stroke:#a78bfa,color:#f9fafb
+    classDef wall fill:#111827,stroke:#ef4444,color:#f9fafb
+    classDef read fill:#172554,stroke:#60a5fa,color:#f9fafb
+    class PoolId,Mandates,Commit,Builder,Outcome,Persist,Transfer core
+    class Pure pure
+    class Stops,Abort wall
+    class Sim read
+```
+
+The architecture separates power from settlement: the originator commits terms
+once, users commit their own curves, anyone can trigger the close, and the
+allocation comes from a pure function over on-chain state rather than organizer
+discretion.
+
 ## Pool Lifecycle
 
 ```mermaid

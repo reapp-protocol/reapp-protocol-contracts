@@ -50,6 +50,42 @@ The important shape is narrow: all state changes pass through the contract, all
 money movement passes through `execute_payment`, and the token transfer happens
 only after the mandate has been re-validated and consumed.
 
+## Enforcement Architecture
+
+```mermaid
+flowchart LR
+    Intent["Signed intent\nuser, agent, merchant, asset,\nbudget, expiry, vc_hash"]
+    Register["register_mandate\nuser auth required"]
+    State["On-chain mandate state\nspent, seq, status"]
+    Read["validate_mandate / get_mandate\nread-only inspection"]
+    Execute["execute_payment\nagent auth + expected_seq"]
+    Recheck["Contract re-checks\nstatus, expiry, merchant, budget"]
+    Consume["Consume first\nspent += amount\nseq += 1"]
+    Transfer["SEP-41 transfer_from\ncontract allowance spender"]
+    Merchant["Merchant receives funds"]
+    Stop1["Wrong merchant\nrejected"]
+    Stop2["Overspend / stale seq\nrejected"]
+    Stop3["Revoked / expired\nrejected"]
+
+    Intent --> Register --> State
+    State --> Read
+    State --> Execute --> Recheck --> Consume --> Transfer --> Merchant
+    Recheck --> Stop1
+    Recheck --> Stop2
+    Recheck --> Stop3
+
+    classDef wall fill:#111827,stroke:#ef4444,color:#f9fafb
+    classDef core fill:#052e16,stroke:#22c55e,color:#f9fafb
+    classDef read fill:#172554,stroke:#60a5fa,color:#f9fafb
+    class Stop1,Stop2,Stop3 wall
+    class Register,State,Execute,Recheck,Consume core
+    class Read read
+```
+
+The architecture is the design: authorization enters once, state lives on-chain,
+every spend re-enters through the contract, and all unsafe branches terminate
+before the token call.
+
 ## Payment Flow
 
 ```mermaid
