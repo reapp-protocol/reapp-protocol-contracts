@@ -1,7 +1,7 @@
 # Simple MandateRegistry
 
 `contracts/simple/mandate-registry` is the simple REAPP mandate contract used
-for the first successful source-verified submission.
+for the first successful source-verified deployment.
 
 It is REAPP's minimal enforcement layer: a user signs a mandate, the contract
 stores it, and funds can move only through `execute_payment`, which validates

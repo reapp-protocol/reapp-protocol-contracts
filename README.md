@@ -7,7 +7,7 @@ the bytecode deployed on Stellar matches this source.
 
 | Folder | Purpose | Verified testnet contract |
 |---|---|---|
-| [`contracts/simple`](contracts/simple) | Simple mandate contract used for the first successful source-verified submission. | [`CB4KOTLGMM5JEPFPU6QBJLADIBP3RSGUX44FOYTFRICNXKKFPYIW7ZOA`](https://stellar.expert/explorer/testnet/contract/CB4KOTLGMM5JEPFPU6QBJLADIBP3RSGUX44FOYTFRICNXKKFPYIW7ZOA) |
+| [`contracts/simple`](contracts/simple) | Simple mandate contract used for the first successful source-verified deployment. | [`CB4KOTLGMM5JEPFPU6QBJLADIBP3RSGUX44FOYTFRICNXKKFPYIW7ZOA`](https://stellar.expert/explorer/testnet/contract/CB4KOTLGMM5JEPFPU6QBJLADIBP3RSGUX44FOYTFRICNXKKFPYIW7ZOA) |
 | [`contracts/composites`](contracts/composites) | Composite mandate contract with clearing pools. This is the main forward-looking contract folder. | [`CBALARHTO5D7JLWHZ5KST4QNIRC64JI5H3DQDHMIUBSRLLOVS6FCWOQX`](https://stellar.expert/explorer/testnet/contract/CBALARHTO5D7JLWHZ5KST4QNIRC64JI5H3DQDHMIUBSRLLOVS6FCWOQX) |
 
 Both contracts keep the same crate name, `mandate-registry`, because they are two
@@ -52,6 +52,6 @@ source artifacts.
 ## Protocol, SDK, and proof
 
 This repo is just the enforcement contract. The full protocol, SDK, x402
-round-trip, reference apps, security gate checks, and clause-by-clause on-chain
+round-trip, reference apps, security gatechecks, and clause-by-clause on-chain
 proof live in
 [`reapp-protocol/reapp-protocol`](https://github.com/reapp-protocol/reapp-protocol).
