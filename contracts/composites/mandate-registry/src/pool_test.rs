@@ -24,6 +24,7 @@ const MAX: i128 = 500_000_000;
 struct W {
     env: Env,
     contract: Address,
+    admin: Address,
     originator: Address,
     merchant: Address,
     asset: Address,
@@ -33,14 +34,21 @@ fn setup() -> W {
     let env = Env::default();
     env.mock_all_auths();
     env.ledger().set_timestamp(NOW);
-    let contract = env.register(MandateRegistry, ());
+    let admin = Address::from_str(
+        &env,
+        "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF",
+    );
+    let contract = env.register(MandateRegistry, (admin.clone(),));
     let originator = Address::generate(&env);
     let merchant = Address::generate(&env);
-    let admin = Address::generate(&env);
-    let asset = env.register_stellar_asset_contract_v2(admin).address();
+    let asset_admin = Address::generate(&env);
+    let asset = env
+        .register_stellar_asset_contract_v2(asset_admin)
+        .address();
     W {
         env,
         contract,
+        admin,
         originator,
         merchant,
         asset,
@@ -180,6 +188,67 @@ fn register_pool_happy() {
     assert_eq!(p.fee_bps_pinned, 0);
     assert_eq!(p.clearing_deadline, DEADLINE);
     assert_eq!(w.client().get_pool_members(&pid).len(), 0);
+}
+
+// ── administration + emergency stop ───────────────────────────────────────
+
+#[test]
+fn pause_blocks_capture_and_unpause_restores_it() {
+    let w = setup();
+    let c = w.client();
+    assert_eq!(c.get_admin(), w.admin);
+
+    let pid = w.pool(3, 15, 120);
+    let user = w.new_user();
+    let child = w.child(&user, 121, &pid, &[(5, 3)]);
+    c.commit_child(&child);
+    w.env.ledger().set_timestamp(DEADLINE);
+
+    c.pause();
+    assert_eq!(c.try_clear_pool(&pid), Err(Ok(Error::Paused)));
+    assert_eq!(c.get_pool(&pid).status, PoolStatus::Open);
+    assert_eq!(c.get_mandate(&child).pool_state, PoolState::Committed);
+    assert_eq!(w.balance(&w.merchant), 0);
+
+    c.unpause();
+    c.clear_pool(&pid);
+    assert_eq!(c.get_pool(&pid).status, PoolStatus::Cleared);
+    assert_eq!(c.get_mandate(&child).pool_state, PoolState::Captured);
+    assert_eq!(w.balance(&w.merchant), 15);
+}
+
+#[test]
+fn paused_clear_allows_abort_and_releases_children() {
+    let w = setup();
+    let c = w.client();
+    let pid = w.pool(4, 0, 122);
+    let user = w.new_user();
+    let child = w.child(&user, 123, &pid, &[(5, 3)]);
+    c.commit_child(&child);
+    w.env.ledger().set_timestamp(DEADLINE);
+
+    c.pause();
+    c.clear_pool(&pid);
+
+    assert_eq!(c.get_pool(&pid).status, PoolStatus::Aborted);
+    assert_eq!(c.get_mandate(&child).pool_state, PoolState::Released);
+    assert_eq!(w.balance(&w.merchant), 0);
+}
+
+#[test]
+fn registration_and_commit_remain_available_while_paused() {
+    let w = setup();
+    let c = w.client();
+    c.pause();
+
+    let pid = w.pool(3, 15, 124);
+    let user = w.new_user();
+    let child = w.child(&user, 125, &pid, &[(5, 3)]);
+    c.commit_child(&child);
+
+    assert!(c.is_paused());
+    assert_eq!(c.get_pool(&pid).status, PoolStatus::Open);
+    assert_eq!(c.get_mandate(&child).pool_state, PoolState::Committed);
 }
 
 #[test]
@@ -961,7 +1030,13 @@ fn reentrant_clear_cannot_double_capture() {
     let env = Env::default();
     env.mock_all_auths();
     env.ledger().set_timestamp(NOW);
-    let registry = env.register(MandateRegistry, ());
+    let registry = env.register(
+        MandateRegistry,
+        (Address::from_str(
+            &env,
+            "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF",
+        ),),
+    );
     let evil = env.register(EvilPoolToken, ());
     let client = MandateRegistryClient::new(&env, &registry);
 
@@ -1028,7 +1103,13 @@ fn frozen_trustline_member_excluded_and_evictable() {
     let env = Env::default();
     env.mock_all_auths();
     env.ledger().set_timestamp(NOW);
-    let contract = env.register(MandateRegistry, ());
+    let contract = env.register(
+        MandateRegistry,
+        (Address::from_str(
+            &env,
+            "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF",
+        ),),
+    );
     let client = MandateRegistryClient::new(&env, &contract);
     let originator = Address::generate(&env);
     let merchant = Address::generate(&env);

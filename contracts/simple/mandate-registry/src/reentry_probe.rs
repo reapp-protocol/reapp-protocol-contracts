@@ -42,7 +42,13 @@ fn reentrancy_via_evil_token() {
     env.mock_all_auths(); // most permissive: even THIS still must respect the contract logic
     env.ledger().set_timestamp(1_000);
 
-    let registry = env.register(MandateRegistry, ());
+    let registry = env.register(
+        MandateRegistry,
+        (Address::from_str(
+            &env,
+            "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF",
+        ),),
+    );
     let evil = env.register(EvilToken, ());
 
     let user = Address::generate(&env);

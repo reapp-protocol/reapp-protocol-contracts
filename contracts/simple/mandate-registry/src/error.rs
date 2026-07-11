@@ -21,4 +21,5 @@ pub enum Error {
     MerchantOutOfScope = 7,
     BadSequence = 8,
     InvalidAmount = 9,
+    Paused = 10,
 }

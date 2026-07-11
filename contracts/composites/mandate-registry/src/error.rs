@@ -5,10 +5,9 @@
 //! and does NOT surface a contract-typed error. So there is no `NotAuthorized`
 //! variant — the test suite asserts the host-level revert instead.
 //!
-//! Reserved slots (kept free so future passes are not ABI breaks):
-//!   3  — was NotAuthorized (host-enforced, see above)
-//!   10 — Paused (admin/pause pass)
-//!   23 — FeeTooHigh, 24 — FeeRecipientNotSet (fee-knob pass)
+//! Reserved slots (kept free so future additions do not renumber errors):
+//!   3 — was NotAuthorized (host-enforced, see above)
+//!   23, 24 — reserved
 
 use soroban_sdk::contracterror;
 
@@ -24,6 +23,7 @@ pub enum Error {
     MerchantOutOfScope = 7,
     BadSequence = 8,
     InvalidAmount = 9,
+    Paused = 10,
     // ── composite layer ──────────────────────────────────────────────────
     PoolNotFound = 11,
     PoolNotOpen = 12,

@@ -1,14 +1,17 @@
 # Simple MandateRegistry
 
-`contracts/simple/mandate-registry` is the simple REAPP mandate contract used
-for the first successful source-verified deployment.
+`contracts/simple/mandate-registry` is REAPP's minimal mandate contract and the
+reference contract for the public SDK. Release `0.2.0` keeps the original
+mandate interface intact and adds an admin-authorized emergency stop, authority
+rotation, and same-address WASM upgrades.
 
 It is REAPP's minimal enforcement layer: a user signs a mandate, the contract
 stores it, and funds can move only through `execute_payment`, which validates
 and consumes the mandate atomically before transferring. The SDK is untrusted;
 this contract is the source of truth.
 
-Built with `soroban-sdk` v22 for the `wasm32v1-none` target.
+Built with `soroban-sdk` v22 for the `wasm32v1-none` target. The historical
+`v0.1.0` source-verified deployment remains unchanged and is documented below.
 
 Everything below is code-backed: public methods come from `src/lib.rs`, the
 money path comes from `src/payment.rs`, and mandate lifecycle rules come from
@@ -21,8 +24,10 @@ flowchart TB
     SDK["SDK / app layer\nuntrusted convenience code"]
     User["User\nsigns mandate"]
     Agent["Agent\nexecutes authorized spend"]
+    Admin["Admin\npause / rotate / upgrade"]
     Merchant["Merchant\nreceives payment"]
     Contract["MandateRegistry\nsingle enforcement boundary"]
+    AdminPlane["admin\noperational controls"]
     Registry["registry\nregister / revoke"]
     Payment["payment\nvalidate / consume / transfer"]
     Storage["storage\npersistent mandate state"]
@@ -32,16 +37,20 @@ flowchart TB
     Token["SEP-41 token\ntransfer_from"]
 
     SDK --> Contract
+    Admin -->|"require_auth on admin methods"| Contract
     User -->|"require_auth on register / revoke"| Contract
     Agent -->|"require_auth on execute_payment"| Contract
     Contract --> Registry
     Contract --> Payment
+    Contract --> AdminPlane
     Registry --> Storage
     Payment --> Storage
+    AdminPlane --> Storage
     Storage --> Mandate
     Storage --> Error
     Registry --> Events
     Payment --> Events
+    AdminPlane --> Events
     Payment --> Token
     Token --> Merchant
 ```
@@ -59,6 +68,7 @@ flowchart LR
     State["On-chain mandate state\nspent, seq, status"]
     Read["validate_mandate / get_mandate\nread-only inspection"]
     Execute["execute_payment\nagent auth + expected_seq"]
+    Pause["Operational pause gate\nadmin controlled"]
     Recheck["Contract re-checks\nstatus, expiry, merchant, budget"]
     Consume["Consume first\nspent += amount\nseq += 1"]
     Transfer["SEP-41 transfer_from\ncontract allowance spender"]
@@ -66,10 +76,12 @@ flowchart LR
     Stop1["Wrong merchant\nrejected"]
     Stop2["Overspend / stale seq\nrejected"]
     Stop3["Revoked / expired\nrejected"]
+    Stop4["Paused\nno state or funds move"]
 
     Intent --> Register --> State
     State --> Read
-    State --> Execute --> Recheck --> Consume --> Transfer --> Merchant
+    State --> Execute --> Pause --> Recheck --> Consume --> Transfer --> Merchant
+    Pause -->|"stopped"| Stop4
     Recheck --> Stop1
     Recheck --> Stop2
     Recheck --> Stop3
@@ -77,7 +89,7 @@ flowchart LR
     classDef wall fill:#111827,stroke:#ef4444,color:#f9fafb
     classDef core fill:#052e16,stroke:#22c55e,color:#f9fafb
     classDef read fill:#172554,stroke:#60a5fa,color:#f9fafb
-    class Stop1,Stop2,Stop3 wall
+    class Stop1,Stop2,Stop3,Stop4 wall
     class Register,State,Execute,Recheck,Consume core
     class Read read
 ```
@@ -85,6 +97,40 @@ flowchart LR
 The architecture is the design: authorization enters once, state lives on-chain,
 every spend re-enters through the contract, and all unsafe branches terminate
 before the token call.
+
+## Administration and Upgrades
+
+```mermaid
+stateDiagram-v2
+    [*] --> Active: constructor(admin)
+    Active --> Paused: admin pause
+    Paused --> Active: admin unpause
+    Active --> Active: register / validate / revoke / read
+    Paused --> Paused: register / validate / revoke / read
+    Active --> Active: execute_payment
+    Paused --> Paused: execute_payment returns Paused
+    Active --> Active: rotate admin
+    Paused --> Paused: rotate admin
+    Paused --> Paused: upload WASM + admin upgrade
+```
+
+The pause is intentionally narrow: it blocks only `execute_payment`, the sole
+money-moving path. Registration, validation, reads, and user revocation remain
+available, so an emergency stop cannot trap consent or mutate mandate state.
+The operating sequence pauses before an upgrade, verifies the new executable at
+the same contract address, then unpauses only after live gate checks pass.
+
+### Operational State
+
+| Storage key | Type | Initial value | Purpose |
+|---|---|---|---|
+| `Admin` | instance `Address` | constructor `admin` | Authorizes `set_admin`, `pause`, `unpause`, and `upgrade`. |
+| `Paused` | instance `bool` | `false` | Makes `execute_payment` return `Paused = 10` before mandate state or funds move. |
+
+`upgrade(new_wasm_hash)` passes the uploaded `BytesN<32>` executable hash to
+Soroban's current-contract WASM update operation. The contract ID, `Admin`,
+`Paused`, and all persistent `Mandate` records remain at the same address; an
+upgrade does not rerun `__constructor`.
 
 ## Payment Flow
 
@@ -101,6 +147,7 @@ sequenceDiagram
     A->>C: validate_mandate(mandate_id, amount, merchant)
     C-->>A: ok or typed error
     A->>C: execute_payment(mandate_id, amount, expected_seq)
+    C->>C: reject with Paused if emergency stop is active
     C->>C: require_auth(agent)
     C->>C: check status, expiry, merchant, budget, seq
     C->>C: advance spent and seq
@@ -129,8 +176,15 @@ validation and execution.
 
 | Method | Auth | Mutates | Returns | What it proves |
 |---|---|---:|---|---|
+| `__constructor(admin)` | Deployment | Yes | `()` | The initial operational authority is set atomically with deployment. |
+| `get_admin()` | None | No | `Address` | Anyone can inspect the current operational authority. |
+| `set_admin(new_admin)` | current `admin` | Yes | `()` | Authority can rotate without replacing the contract. |
+| `pause()` | current `admin` | Yes | `()` | The sole money path is stopped; repeated calls are safe. |
+| `unpause()` | current `admin` | Yes | `()` | The sole money path is restored; repeated calls are safe. |
+| `is_paused()` | None | No | `bool` | Apps and operators can inspect the emergency-stop state. |
+| `upgrade(new_wasm_hash)` | current `admin` | Yes | `()` | The executable can change while the contract ID and storage remain intact. |
 | `register_mandate(user, agent, merchant, asset, max_amount, expiry, vc_hash)` | `user` | Yes | `BytesN<32>` mandate id | The user authorized the exact merchant, asset, budget, expiry, and agent. |
-| `validate_mandate(mandate_id, amount, merchant)` | None | No | `()` | A spend would be valid right now without consuming anything. |
+| `validate_mandate(mandate_id, amount, merchant)` | None | No | `()` | The mandate rules accept a spend without consuming it; `is_paused` reports the separate operational state. |
 | `execute_payment(mandate_id, amount, expected_seq)` | `agent` | Yes | `()` | The authorized spend was validated, consumed, sequence-checked, and transferred atomically. |
 | `revoke_mandate(mandate_id)` | stored `user` | Yes | `()` | The user withdrew consent before further spending. |
 | `get_mandate(mandate_id)` | None | No | `Mandate` | Anyone can inspect the stored authorization state. |
@@ -144,11 +198,31 @@ validation and execution.
 - Cumulative budget guard: every payment checks `spent + amount <= max_amount`.
 - Merchant binding: a mandate cannot be redirected to another merchant.
 - User exit: `revoke_mandate` closes the mandate with user auth.
+- Narrow emergency stop: pause rejects payment before mandate state or funds move.
+- Admin isolation: only the stored admin can pause, unpause, rotate authority, or upgrade.
+- Stable upgrade boundary: existing method signatures and stored mandate encoding
+  remain compatible across implementation upgrades.
 - Typed errors and events make failures and successful state changes visible.
 
-## Deployed Contract
+## Release 0.2.0
 
-The simple MandateRegistry is live on **Stellar testnet**:
+| | |
+|---|---|
+| Status | Release candidate; not deployed |
+| Planned tag | `simple-v0.2.0` |
+| SDK role | Default simple MandateRegistry for `@reapp-sdk/stellar` |
+| Constructor | `admin: Address` |
+| New error | `Paused = 10` |
+| Compatibility | All five original methods and the `Mandate` encoding are unchanged |
+
+The contract ID, WASM hash, release artifact, deployment transaction, and
+verification URL are added only after the tagged CI artifact is deployed and
+source verified.
+
+## Historical Verified Deployment
+
+The immutable `v0.1.0` simple MandateRegistry remains live on **Stellar
+testnet**. It does not contain the `0.2.0` admin or upgrade methods:
 
 | | |
 |---|---|
@@ -169,17 +243,22 @@ shasum -a 256 onchain.wasm
 
 ## Source Verification
 
-The source in this folder was restored from the verified `v0.1.0` contract
-source. The source-verification anchor remains the historical tag and matching
-release artifact, so the verified contract stays tied to the bytecode that was
-actually deployed.
+The `v0.1.0` tag and matching release artifact remain the historical
+source-verification anchor. Current `main` is the additive `0.2.0` release
+candidate and does not claim the historical deployment's WASM hash.
 
 Future simple-contract verification releases should build from this folder:
 
 ```
 cd contracts/simple/mandate-registry
+cargo fmt --all -- --check
+cargo clippy --all-targets -- -D warnings
 cargo test
-stellar contract build
+cargo build --target wasm32v1-none --release
 ```
 
-Use `simple-v*` tags for future simple-contract release builds.
+Tag `simple-v0.2.0`, let the StellarExpert build workflow create the release
+artifact and attestation, and deploy that exact downloaded artifact. Confirm
+its SHA-256 and on-chain executable hash match before recording the deployment
+as source verified. Future same-address upgrades repeat this tagged-artifact
+process and invoke `upgrade(new_wasm_hash)` on the existing contract.

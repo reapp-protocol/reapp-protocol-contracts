@@ -1,0 +1,20 @@
+name: Contract Gatecheck
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  contracts:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - name: Install Rust contract toolchain
+        run: rustup toolchain install stable --profile minimal --component clippy,rustfmt --target wasm32v1-none
+      - name: Gatecheck both contracts
+        run: ./scripts/gatecheck-contracts.sh

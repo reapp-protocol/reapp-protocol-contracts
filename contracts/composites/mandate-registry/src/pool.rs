@@ -22,7 +22,7 @@ use crate::pooltypes::{
     ChildView, ClearOutcome, ClearingKind, ClearingPool, PoolStatus, CAPTURE_WINDOW_SECS,
     MAX_POOL_HORIZON_SECS, MAX_POOL_MEMBERS,
 };
-use crate::{clearing, events, storage};
+use crate::{admin, clearing, events, storage};
 
 use crate::mandate::{MAX_QTY, MAX_UNIT_PRICE};
 
@@ -275,6 +275,12 @@ pub fn clear_pool(env: &Env, pool_id: BytesN<32>) -> Result<(), Error> {
         return Ok(());
     }
 
+    // The emergency stop blocks capture only. Abort remains available so
+    // members can always be released from a pool that cannot settle.
+    if admin::is_paused(env) {
+        return Err(Error::Paused);
+    }
+
     // Checks-effects-interactions: persist ALL state before any transfer, so a
     // reentrant clear_pool during a transfer callback finds PoolNotOpen.
     pool.status = PoolStatus::Cleared;
@@ -310,7 +316,7 @@ pub fn clear_pool(env: &Env, pool_id: BytesN<32>) -> Result<(), Error> {
 
     // Interactions last, in allocation (mandate_id) order. fee_bps_pinned is 0
     // for every pool this build can register, so the merchant leg is the whole
-    // leg; the split stays exact when the fee pass lands (floored fee).
+    // leg. The stored field is retained for serialized-state compatibility.
     let token = TokenClient::new(env, &pool.asset);
     let contract = env.current_contract_address();
     for allocation in outcome.allocations.iter() {

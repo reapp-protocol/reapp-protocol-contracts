@@ -8,7 +8,7 @@ use soroban_sdk::{Address, BytesN, Env};
 
 use crate::error::Error;
 use crate::mandate::{Mandate, PoolState, Status};
-use crate::{events, storage};
+use crate::{admin, events, storage};
 
 /// The single source of enforcement truth. Every check the protocol makes lives
 /// here, and `execute_payment` re-runs it against stored state on every spend —
@@ -73,6 +73,10 @@ pub fn execute_payment(
     amount: i128,
     expected_seq: u32,
 ) -> Result<(), Error> {
+    if admin::is_paused(env) {
+        return Err(Error::Paused);
+    }
+
     let mut mandate = storage::get_mandate(env, mandate_id.clone())?;
     mandate.agent.require_auth();
 

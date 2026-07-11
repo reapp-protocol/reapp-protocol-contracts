@@ -31,6 +31,7 @@
 #[cfg(test)]
 extern crate std;
 
+mod admin;
 mod clearing;
 mod error;
 mod events;
@@ -52,6 +53,44 @@ pub struct MandateRegistry;
 
 #[contractimpl]
 impl MandateRegistry {
+    /// Atomically establishes the initial administrator during deployment.
+    /// Constructors run only once; WASM upgrades do not run them again.
+    pub fn __constructor(env: Env, admin: Address) {
+        storage::set_admin(&env, &admin);
+        storage::set_paused(&env, false);
+    }
+
+    /// Current operational administrator.
+    pub fn get_admin(env: Env) -> Address {
+        admin::get_admin(&env)
+    }
+
+    /// Rotate operational authority. Authorized by the current administrator.
+    pub fn set_admin(env: Env, new_admin: Address) {
+        admin::set_admin(&env, new_admin)
+    }
+
+    /// Emergency stop for both money-moving paths.
+    pub fn pause(env: Env) {
+        admin::pause(&env)
+    }
+
+    /// Restore both money-moving paths after an emergency stop.
+    pub fn unpause(env: Env) {
+        admin::unpause(&env)
+    }
+
+    /// Read the emergency-stop state without authorization.
+    pub fn is_paused(env: Env) -> bool {
+        admin::is_paused(&env)
+    }
+
+    /// Replace this contract's WASM while preserving its address and storage.
+    /// Authorized by the current administrator.
+    pub fn upgrade(env: Env, new_wasm_hash: BytesN<32>) {
+        admin::upgrade(&env, new_wasm_hash)
+    }
+
     /// Store a user-signed mandate from its authorized parameters. The contract
     /// sets `spent=0, seq=0, status=Active` itself. Authorized by `user`.
     /// Returns the mandate id (= `vc_hash`, the storage key).

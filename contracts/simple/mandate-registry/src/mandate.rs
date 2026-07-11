@@ -19,7 +19,7 @@ pub struct Mandate {
     pub spent: i128,
     /// Ledger close timestamp (seconds) after which the mandate is dead.
     pub expiry: u64,
-    /// Monotonic payment counter (mandate-level audit / replay guard).
+    /// Monotonic payment counter (mandate-level trace / replay guard).
     pub seq: u32,
     pub status: Status,
     /// Hash binding to the off-chain AP2 IntentMandate VC; also the storage key.

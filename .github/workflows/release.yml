@@ -10,9 +10,19 @@ permissions:
   contents: write
   attestations: write
 jobs:
+  gatecheck:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - name: Install Rust contract toolchain
+        run: rustup toolchain install stable --profile minimal --component clippy,rustfmt --target wasm32v1-none
+      - name: Gatecheck both contracts
+        run: ./scripts/gatecheck-contracts.sh
+
   release-composites-mandate-registry:
+    needs: gatecheck
     if: startsWith(github.ref_name, 'composites-v') || (startsWith(github.ref_name, 'v') && !startsWith(github.ref_name, 'v0.1.'))
-    uses: stellar-expert/soroban-build-workflow/.github/workflows/release.yml@main
+    uses: stellar-expert/soroban-build-workflow/.github/workflows/release.yml@v22.0.1
     with:
       release_name: ${{ github.ref_name }}
       release_description: 'Composite MandateRegistry contract release'
@@ -22,8 +32,9 @@ jobs:
       release_token: ${{ secrets.GITHUB_TOKEN }}
 
   release-simple-mandate-registry:
+    needs: gatecheck
     if: startsWith(github.ref_name, 'simple-v') || startsWith(github.ref_name, 'v0.1.')
-    uses: stellar-expert/soroban-build-workflow/.github/workflows/release.yml@main
+    uses: stellar-expert/soroban-build-workflow/.github/workflows/release.yml@v22.0.1
     with:
       release_name: ${{ github.ref_name }}
       release_description: 'Simple MandateRegistry contract release'

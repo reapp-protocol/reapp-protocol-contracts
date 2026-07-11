@@ -19,6 +19,7 @@ const FUNDED: i128 = 1_000_000_000;
 struct World {
     env: Env,
     contract: Address,
+    admin: Address,
     user: Address,
     agent: Address,
     merchant: Address,
@@ -31,13 +32,19 @@ fn setup() -> World {
     env.mock_all_auths();
     env.ledger().set_timestamp(NOW);
 
-    let contract = env.register(MandateRegistry, ());
+    let admin = Address::from_str(
+        &env,
+        "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF",
+    );
+    let contract = env.register(MandateRegistry, (admin.clone(),));
     let user = Address::generate(&env);
     let agent = Address::generate(&env);
     let merchant = Address::generate(&env);
 
-    let admin = Address::generate(&env);
-    let asset = env.register_stellar_asset_contract_v2(admin).address();
+    let asset_admin = Address::generate(&env);
+    let asset = env
+        .register_stellar_asset_contract_v2(asset_admin)
+        .address();
 
     // Fund the user and approve the registry as the SEP-41 spender (allowance).
     StellarAssetClient::new(&env, &asset).mint(&user, &FUNDED);
@@ -47,6 +54,7 @@ fn setup() -> World {
     World {
         env,
         contract,
+        admin,
         user,
         agent,
         merchant,
@@ -120,6 +128,92 @@ fn happy_path_runs_every_method() {
         c.try_execute_payment(&w.id, &SPEND, &1),
         Err(Ok(Error::MandateRevoked))
     );
+}
+
+// ── administration + emergency stop ───────────────────────────────────────
+
+#[test]
+fn constructor_sets_admin_and_unpaused_state() {
+    let w = setup();
+    assert_eq!(w.client().get_admin(), w.admin);
+    assert!(!w.client().is_paused());
+}
+
+#[test]
+fn admin_can_pause_and_unpause_idempotently() {
+    let w = setup();
+    let c = w.client();
+    c.pause();
+    c.pause();
+    assert!(c.is_paused());
+    c.unpause();
+    c.unpause();
+    assert!(!c.is_paused());
+}
+
+#[test]
+fn pause_blocks_solo_payment_without_changing_mandate_state() {
+    let w = setup();
+    let c = w.client();
+    w.register();
+    c.pause();
+
+    assert_eq!(
+        c.try_execute_payment(&w.id, &SPEND, &0),
+        Err(Ok(Error::Paused))
+    );
+    assert_eq!(c.get_mandate(&w.id).spent, 0);
+    assert_eq!(c.get_mandate(&w.id).seq, 0);
+    assert_eq!(w.balance(&w.merchant), 0);
+
+    c.unpause();
+    c.execute_payment(&w.id, &SPEND, &0);
+    assert_eq!(w.balance(&w.merchant), SPEND);
+}
+
+#[test]
+fn registration_validation_reads_and_revocation_remain_available_while_paused() {
+    let w = setup();
+    let c = w.client();
+    c.pause();
+
+    w.register();
+    c.validate_mandate(&w.id, &SPEND, &w.merchant);
+    assert_eq!(c.get_mandate(&w.id).status, Status::Active);
+    c.revoke_mandate(&w.id);
+    assert_eq!(c.get_mandate(&w.id).status, Status::Revoked);
+}
+
+#[test]
+fn admin_rotation_transfers_control() {
+    let w = setup();
+    let c = w.client();
+    let new_admin = Address::generate(&w.env);
+    c.set_admin(&new_admin);
+    assert_eq!(c.get_admin(), new_admin);
+
+    w.env.set_auths(&[]);
+    assert!(c.try_pause().is_err());
+
+    w.env.mock_all_auths();
+    c.pause();
+    assert!(c.is_paused());
+}
+
+#[test]
+fn admin_methods_require_authorization() {
+    let w = setup();
+    let c = w.client();
+    let replacement = Address::generate(&w.env);
+    let wasm_hash = BytesN::from_array(&w.env, &[42u8; 32]);
+    w.env.set_auths(&[]);
+
+    assert!(c.try_pause().is_err());
+    assert!(c.try_unpause().is_err());
+    assert!(c.try_set_admin(&replacement).is_err());
+    assert!(c.try_upgrade(&wasm_hash).is_err());
+    assert!(!c.is_paused());
+    assert_eq!(c.get_admin(), w.admin);
 }
 
 #[test]
@@ -292,7 +386,13 @@ fn out_of_order_seq_rejected() {
 fn register_requires_user_auth() {
     let env = Env::default();
     env.ledger().set_timestamp(NOW);
-    let contract = env.register(MandateRegistry, ());
+    let contract = env.register(
+        MandateRegistry,
+        (Address::from_str(
+            &env,
+            "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF",
+        ),),
+    );
     let client = MandateRegistryClient::new(&env, &contract);
     let user = Address::generate(&env);
     let agent = Address::generate(&env);

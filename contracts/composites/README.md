@@ -1,14 +1,17 @@
 # Composite MandateRegistry
 
 `contracts/composites/mandate-registry` is REAPP's composite mandate contract
-with clearing pools. This is the main forward-looking contract folder.
+with deterministic clearing pools. Release `0.3.0` keeps the full `0.2.0`
+mandate and pool interface intact and adds admin-authorized emergency controls,
+authority rotation, and same-address WASM upgrades.
 
 It extends the simple mandate path with deterministic group clearing: money
 moves only through `execute_payment` for standalone mandates or `clear_pool` for
 composite capture. Each path validates and consumes atomically before
 transferring. The SDK is untrusted; this contract is the source of truth.
 
-Built with `soroban-sdk` v22 for the `wasm32v1-none` target.
+Built with `soroban-sdk` v22 for the `wasm32v1-none` target. The historical
+`v0.2.0` source-verified deployment remains unchanged and is documented below.
 
 Everything below is code-backed: public methods come from `src/lib.rs`, the
 money paths come from `src/payment.rs` and `src/pool.rs`, and the allocation
@@ -23,8 +26,10 @@ flowchart TB
     Agent["Agent\nsolo execution"]
     Originator["Originator\nregisters pool terms"]
     Keeper["Anyone\ncommit / evict / clear"]
+    Admin["Admin\npause / rotate / upgrade"]
     Merchant["Merchant\nreceives settlement"]
     Contract["MandateRegistry\nsingle enforcement boundary"]
+    AdminPlane["admin\noperational controls"]
     Registry["registry\nmandate register / revoke"]
     Payment["payment\nsolo validate / consume / transfer"]
     Pool["pool\npool lifecycle and settlement"]
@@ -37,6 +42,7 @@ flowchart TB
     Token["SEP-41 token\ntransfer_from"]
 
     SDK --> Contract
+    Admin -->|"require_auth on admin methods"| Contract
     User -->|"require_auth on mandate register / revoke"| Contract
     Agent -->|"require_auth on execute_payment"| Contract
     Originator -->|"require_auth on register_pool"| Contract
@@ -44,10 +50,12 @@ flowchart TB
     Contract --> Registry
     Contract --> Payment
     Contract --> Pool
+    Contract --> AdminPlane
     Pool --> Clearing
     Registry --> Storage
     Payment --> Storage
     Pool --> Storage
+    AdminPlane --> Storage
     Clearing --> Mandate
     Clearing --> PoolTypes
     Storage --> Mandate
@@ -56,6 +64,7 @@ flowchart TB
     Registry --> Events
     Payment --> Events
     Pool --> Events
+    AdminPlane --> Events
     Payment --> Token
     Pool --> Token
     Token --> Merchant
@@ -77,17 +86,20 @@ flowchart LR
     Builder["build_child_views\nstored state + live token reads"]
     Pure["clearing::clear\npure allocation function"]
     Outcome["ClearOutcome\nfires, p*, allocations"]
+    Pause["Operational pause gate\nadmin controlled"]
     Persist["Persist terminal state first\npool + child mandates"]
     Transfer["SEP-41 transfer_from\nallocation legs"]
     Merchant["Merchant receives settlement"]
     Sim["simulate_clear\nsame builder + same pure function"]
     Abort["No fire\nrelease committed children"]
     Stops["Bad terms / ineligible child /\nwrong asset / wrong merchant\nrejected before capture"]
+    Stopped["Capture stopped\nno state or funds move"]
 
     Terms --> PoolId
     PoolId --> Mandates --> Commit --> Builder --> Pure --> Outcome
     Builder --> Sim --> Pure
-    Outcome -->|"fires"| Persist --> Transfer --> Merchant
+    Outcome -->|"fires"| Pause --> Persist --> Transfer --> Merchant
+    Pause -->|"stopped"| Stopped
     Outcome -->|"no fire"| Abort
     Commit --> Stops
     Builder --> Stops
@@ -98,7 +110,7 @@ flowchart LR
     classDef read fill:#172554,stroke:#60a5fa,color:#f9fafb
     class PoolId,Mandates,Commit,Builder,Outcome,Persist,Transfer core
     class Pure pure
-    class Stops,Abort wall
+    class Stops,Abort,Stopped wall
     class Sim read
 ```
 
@@ -106,6 +118,41 @@ The architecture separates power from settlement: the originator commits terms
 once, users commit their own curves, anyone can trigger the close, and the
 allocation comes from a pure function over on-chain state rather than organizer
 discretion.
+
+## Administration and Upgrades
+
+```mermaid
+stateDiagram-v2
+    [*] --> Active: constructor(admin)
+    Active --> Paused: admin pause
+    Paused --> Active: admin unpause
+    Active --> Active: register / commit / evict / simulate / read
+    Paused --> Paused: register / commit / evict / simulate / read
+    Active --> Active: solo payment or pool capture
+    Paused --> Paused: solo payment returns Paused
+    Paused --> Paused: firing pool capture returns Paused
+    Paused --> Paused: non-firing pool can abort and release children
+    Active --> Active: rotate admin
+    Paused --> Paused: upload WASM + admin upgrade
+```
+
+The emergency stop blocks only money movement: `execute_payment` and the firing
+capture branch of `clear_pool`. A pool that cannot fire may still abort and
+release children while paused; registration, commitment, eviction, simulation,
+reads, and user revocation also remain available. The operating sequence pauses
+before an upgrade and unpauses only after same-address live gate checks pass.
+
+### Operational State
+
+| Storage key | Type | Initial value | Purpose |
+|---|---|---|---|
+| `Admin` | instance `Address` | constructor `admin` | Authorizes `set_admin`, `pause`, `unpause`, and `upgrade`. |
+| `Paused` | instance `bool` | `false` | Stops solo payment and firing pool capture with `Paused = 10` before state or funds move. |
+
+`upgrade(new_wasm_hash)` passes the uploaded `BytesN<32>` executable hash to
+Soroban's current-contract WASM update operation. The contract ID, `Admin`,
+`Paused`, persistent `Mandate` records, pools, and membership lists remain at
+the same address; an upgrade does not rerun `__constructor`.
 
 ## Pool Lifecycle
 
@@ -202,8 +249,15 @@ price that satisfies the pool thresholds.
 
 | Method | Auth | Mutates | Returns | What it proves |
 |---|---|---:|---|---|
+| `__constructor(admin)` | Deployment | Yes | `()` | The initial operational authority is set atomically with deployment. |
+| `get_admin()` | None | No | `Address` | Anyone can inspect the current operational authority. |
+| `set_admin(new_admin)` | current `admin` | Yes | `()` | Authority can rotate without replacing the contract. |
+| `pause()` | current `admin` | Yes | `()` | Both money paths are stopped; repeated calls are safe. |
+| `unpause()` | current `admin` | Yes | `()` | Both money paths are restored; repeated calls are safe. |
+| `is_paused()` | None | No | `bool` | Apps and operators can inspect the emergency-stop state. |
+| `upgrade(new_wasm_hash)` | current `admin` | Yes | `()` | The executable can change while the contract ID and storage remain intact. |
 | `register_mandate(user, agent, merchant, asset, max_amount, expiry, vc_hash, pool_id, price_schedule)` | `user` | Yes | `BytesN<32>` mandate id | The user authorized either a standalone mandate or a pool-bound demand curve. |
-| `validate_mandate(mandate_id, amount, merchant)` | None | No | `()` | A solo-path spend would be valid right now without consuming anything. |
+| `validate_mandate(mandate_id, amount, merchant)` | None | No | `()` | The solo mandate rules accept a spend without consuming it; `is_paused` reports the separate operational state. |
 | `execute_payment(mandate_id, amount, expected_seq)` | `agent` | Yes | `()` | The solo-path spend was validated, consumed, sequence-checked, and transferred atomically. |
 | `revoke_mandate(mandate_id)` | stored `user` | Yes | `()` | The user withdrew consent and frees a committed pool slot when applicable. |
 | `get_mandate(mandate_id)` | None | No | `Mandate` | Anyone can inspect stored mandate state, including pool binding. |
@@ -230,10 +284,32 @@ price that satisfies the pool thresholds.
   budget, status, and committed state are checked at capture time.
 - Reentrancy shape: pool status and member state are persisted before token
   transfers.
+- Narrow emergency stop: solo payment and firing capture fail before state or
+  funds move, while abort and user-exit paths remain available.
+- Admin isolation: only the stored admin can pause, unpause, rotate authority,
+  or upgrade.
+- Stable upgrade boundary: every `0.2.0` method, type, and stored pool/mandate
+  encoding remains compatible.
 
-## Deployed Contract
+## Release 0.3.0
 
-The composite MandateRegistry is live on **Stellar testnet**:
+| | |
+|---|---|
+| Status | Release candidate; not deployed |
+| Planned tag | `composites-v0.3.0` |
+| Role | Separate composite MandateRegistry deployment |
+| Constructor | `admin: Address` |
+| New error | `Paused = 10` |
+| Compatibility | Every `0.2.0` mandate, pool, clearing, and read method is unchanged |
+
+The contract ID, WASM hash, release artifact, deployment transaction, and
+verification URL are added only after the tagged CI artifact is deployed and
+source verified.
+
+## Historical Verified Deployment
+
+The immutable `v0.2.0` composite MandateRegistry remains live on **Stellar
+testnet**. It does not contain the `0.3.0` admin or upgrade methods:
 
 | | |
 |---|---|
@@ -254,18 +330,22 @@ shasum -a 256 onchain.wasm
 
 ## Source Verification
 
-The source-verification anchor remains the historical `v0.2.0` tag and matching
-release artifact. Moving the current source into this folder on `main` keeps the
-verified code readable beside the simple contract without changing the deployed
-artifact.
+The `v0.2.0` tag and matching release artifact remain the historical
+source-verification anchor. Current `main` is the additive `0.3.0` release
+candidate and does not claim the historical deployment's WASM hash.
 
 Build and test from this folder:
 
 ```
 cd contracts/composites/mandate-registry
+cargo fmt --all -- --check
+cargo clippy --all-targets -- -D warnings
 cargo test
-stellar contract build
+cargo build --target wasm32v1-none --release
 ```
 
-Use `v*` tags, except `v0.1.*`, or `composites-v*` tags for future
-composite-contract release builds.
+Tag `composites-v0.3.0`, let the StellarExpert build workflow create the release
+artifact and attestation, and deploy that exact downloaded artifact. Confirm
+its SHA-256 and on-chain executable hash match before recording the deployment
+as source verified. Future same-address upgrades repeat this tagged-artifact
+process and invoke `upgrade(new_wasm_hash)` on the existing contract.

@@ -2,7 +2,7 @@
 //! MandateRegistry — REAPP's on-chain enforcement layer.
 //!
 //! The contract is the entire protocol and is small by design: a small
-//! interface is auditable. Money moves only through `execute_payment`, which
+//! interface is reviewable. Money moves only through `execute_payment`, which
 //! validates-and-consumes the mandate atomically before transferring. The SDK
 //! is untrusted; this contract is the source of truth.
 //!
@@ -19,6 +19,7 @@
 //!  - `error`    — typed errors.
 //!  - `events`   — emitted events.
 
+mod admin;
 mod error;
 mod events;
 mod mandate;
@@ -36,6 +37,44 @@ pub struct MandateRegistry;
 
 #[contractimpl]
 impl MandateRegistry {
+    /// Atomically establishes the initial administrator during deployment.
+    /// Constructors run only once; WASM upgrades do not run them again.
+    pub fn __constructor(env: Env, admin: Address) {
+        storage::set_admin(&env, &admin);
+        storage::set_paused(&env, false);
+    }
+
+    /// Current operational administrator.
+    pub fn get_admin(env: Env) -> Address {
+        admin::get_admin(&env)
+    }
+
+    /// Rotate operational authority. Authorized by the current administrator.
+    pub fn set_admin(env: Env, new_admin: Address) {
+        admin::set_admin(&env, new_admin)
+    }
+
+    /// Emergency stop for the sole money-moving path.
+    pub fn pause(env: Env) {
+        admin::pause(&env)
+    }
+
+    /// Restore the money-moving path after an emergency stop.
+    pub fn unpause(env: Env) {
+        admin::unpause(&env)
+    }
+
+    /// Read the emergency-stop state without authorization.
+    pub fn is_paused(env: Env) -> bool {
+        admin::is_paused(&env)
+    }
+
+    /// Replace this contract's WASM while preserving its address and storage.
+    /// Authorized by the current administrator.
+    pub fn upgrade(env: Env, new_wasm_hash: BytesN<32>) {
+        admin::upgrade(&env, new_wasm_hash)
+    }
+
     /// Store a user-signed mandate from its authorized parameters. The contract
     /// sets `spent=0, seq=0, status=Active` itself. Authorized by `user`.
     /// Returns the mandate id (= `vc_hash`, the storage key).
@@ -86,7 +125,7 @@ impl MandateRegistry {
         registry::revoke_mandate(&env, mandate_id)
     }
 
-    /// Read-only accessor for the stored mandate (audit / preflight).
+    /// Read-only accessor for the stored mandate (inspection / preflight).
     pub fn get_mandate(env: Env, mandate_id: BytesN<32>) -> Result<Mandate, Error> {
         storage::get_mandate(&env, mandate_id)
     }
