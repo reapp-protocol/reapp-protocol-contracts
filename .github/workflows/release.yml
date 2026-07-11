@@ -22,7 +22,7 @@ jobs:
   release-composites-mandate-registry:
     needs: gatecheck
     if: startsWith(github.ref_name, 'composites-v') || (startsWith(github.ref_name, 'v') && !startsWith(github.ref_name, 'v0.1.'))
-    uses: stellar-expert/soroban-build-workflow/.github/workflows/release.yml@v22.0.1
+    uses: stellar-expert/soroban-build-workflow/.github/workflows/release.yml@v25.1.0
     with:
       release_name: ${{ github.ref_name }}
       release_description: 'Composite MandateRegistry contract release'
@@ -34,7 +34,7 @@ jobs:
   release-simple-mandate-registry:
     needs: gatecheck
     if: startsWith(github.ref_name, 'simple-v') || startsWith(github.ref_name, 'v0.1.')
-    uses: stellar-expert/soroban-build-workflow/.github/workflows/release.yml@v22.0.1
+    uses: stellar-expert/soroban-build-workflow/.github/workflows/release.yml@v25.1.0
     with:
       release_name: ${{ github.ref_name }}
       release_description: 'Simple MandateRegistry contract release'
