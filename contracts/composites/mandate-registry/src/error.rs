@@ -46,4 +46,8 @@ pub enum Error {
     DeadlineNotReached = 29,
     DeadlineTooFar = 30,
     MemberStillEligible = 31,
+    UpgradeNotScheduled = 32,
+    UpgradeNotReady = 33,
+    UpgradeAlreadyScheduled = 34,
+    UpgradeRequiresPause = 35,
 }

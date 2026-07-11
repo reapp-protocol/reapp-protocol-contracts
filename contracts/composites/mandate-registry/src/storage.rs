@@ -3,6 +3,7 @@
 
 use soroban_sdk::{contracttype, Address, BytesN, Env, Vec};
 
+use crate::admin::PendingUpgrade;
 use crate::error::Error;
 use crate::mandate::Mandate;
 use crate::pooltypes::ClearingPool;
@@ -17,6 +18,7 @@ const SECS_PER_LEDGER: u64 = 5;
 pub enum DataKey {
     Admin,
     Paused,
+    PendingUpgrade,
     Mandate(BytesN<32>),
     Pool(BytesN<32>),
     PoolMembers(BytesN<32>),
@@ -39,6 +41,20 @@ pub fn is_paused(env: &Env) -> bool {
         .instance()
         .get(&DataKey::Paused)
         .unwrap_or(false)
+}
+
+pub fn set_pending_upgrade(env: &Env, pending: &PendingUpgrade) {
+    env.storage()
+        .instance()
+        .set(&DataKey::PendingUpgrade, pending);
+}
+
+pub fn get_pending_upgrade(env: &Env) -> Option<PendingUpgrade> {
+    env.storage().instance().get(&DataKey::PendingUpgrade)
+}
+
+pub fn remove_pending_upgrade(env: &Env) {
+    env.storage().instance().remove(&DataKey::PendingUpgrade);
 }
 
 pub fn has_mandate(env: &Env, id: &BytesN<32>) -> bool {

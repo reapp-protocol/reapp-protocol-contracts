@@ -2,9 +2,18 @@
 //! same-address WASM upgrades. All state access remains centralized in
 //! `storage`; Soroban host authorization rejects every unauthorized call.
 
-use soroban_sdk::{Address, BytesN, Env};
+use soroban_sdk::{contracttype, Address, BytesN, Env};
 
-use crate::{events, storage};
+use crate::{events, storage, Error};
+
+pub const UPGRADE_DELAY_SECONDS: u64 = 86_400;
+
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct PendingUpgrade {
+    pub wasm_hash: BytesN<32>,
+    pub execute_after: u64,
+}
 
 pub fn get_admin(env: &Env) -> Address {
     storage::get_admin(env)
@@ -39,7 +48,48 @@ pub fn unpause(env: &Env) {
     }
 }
 
-pub fn upgrade(env: &Env, new_wasm_hash: BytesN<32>) {
-    storage::get_admin(env).require_auth();
-    env.deployer().update_current_contract_wasm(new_wasm_hash);
+pub fn schedule_upgrade(env: &Env, new_wasm_hash: BytesN<32>) -> Result<u64, Error> {
+    let admin = storage::get_admin(env);
+    admin.require_auth();
+    if storage::get_pending_upgrade(env).is_some() {
+        return Err(Error::UpgradeAlreadyScheduled);
+    }
+
+    let pending = PendingUpgrade {
+        wasm_hash: new_wasm_hash,
+        execute_after: env
+            .ledger()
+            .timestamp()
+            .saturating_add(UPGRADE_DELAY_SECONDS),
+    };
+    storage::set_pending_upgrade(env, &pending);
+    events::upgrade_scheduled(env, &admin, &pending.wasm_hash, pending.execute_after);
+    Ok(pending.execute_after)
+}
+
+pub fn cancel_upgrade(env: &Env) -> Result<(), Error> {
+    let admin = storage::get_admin(env);
+    admin.require_auth();
+    let pending = storage::get_pending_upgrade(env).ok_or(Error::UpgradeNotScheduled)?;
+    storage::remove_pending_upgrade(env);
+    events::upgrade_cancelled(env, &admin, &pending.wasm_hash);
+    Ok(())
+}
+
+pub fn execute_upgrade(env: &Env) -> Result<(), Error> {
+    let admin = storage::get_admin(env);
+    admin.require_auth();
+    let pending = storage::get_pending_upgrade(env).ok_or(Error::UpgradeNotScheduled)?;
+    if env.ledger().timestamp() < pending.execute_after {
+        return Err(Error::UpgradeNotReady);
+    }
+    if !storage::is_paused(env) {
+        return Err(Error::UpgradeRequiresPause);
+    }
+
+    storage::remove_pending_upgrade(env);
+    events::upgrade_executed(env, &admin, &pending.wasm_hash);
+    env.deployer()
+        .update_current_contract_wasm(pending.wasm_hash);
+    Ok(())
 }

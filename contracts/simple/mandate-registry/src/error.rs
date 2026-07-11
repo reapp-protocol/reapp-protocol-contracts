@@ -22,4 +22,8 @@ pub enum Error {
     BadSequence = 8,
     InvalidAmount = 9,
     Paused = 10,
+    UpgradeNotScheduled = 11,
+    UpgradeNotReady = 12,
+    UpgradeAlreadyScheduled = 13,
+    UpgradeRequiresPause = 14,
 }

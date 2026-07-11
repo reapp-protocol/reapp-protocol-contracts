@@ -211,7 +211,7 @@ fn admin_methods_require_authorization() {
     assert!(c.try_pause().is_err());
     assert!(c.try_unpause().is_err());
     assert!(c.try_set_admin(&replacement).is_err());
-    assert!(c.try_upgrade(&wasm_hash).is_err());
+    assert!(c.try_schedule_upgrade(&wasm_hash).is_err());
     assert!(!c.is_paused());
     assert_eq!(c.get_admin(), w.admin);
 }

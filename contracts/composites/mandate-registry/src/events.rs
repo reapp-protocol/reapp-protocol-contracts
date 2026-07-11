@@ -22,6 +22,25 @@ pub fn unpaused(env: &Env, admin: &Address) {
         .publish((symbol_short!("unpaused"), admin.clone()), ());
 }
 
+pub fn upgrade_scheduled(env: &Env, admin: &Address, wasm_hash: &BytesN<32>, execute_after: u64) {
+    env.events().publish(
+        (symbol_short!("up_sched"), admin.clone()),
+        (wasm_hash.clone(), execute_after),
+    );
+}
+
+pub fn upgrade_cancelled(env: &Env, admin: &Address, wasm_hash: &BytesN<32>) {
+    env.events().publish(
+        (symbol_short!("up_cancel"), admin.clone()),
+        wasm_hash.clone(),
+    );
+}
+
+pub fn upgrade_executed(env: &Env, admin: &Address, wasm_hash: &BytesN<32>) {
+    env.events()
+        .publish((symbol_short!("up_exec"), admin.clone()), wasm_hash.clone());
+}
+
 /// `register_mandate` stored a mandate. topic: ("register", user) data: mandate_id
 pub fn mandate_registered(env: &Env, mandate_id: &BytesN<32>, user: &Address) {
     env.events().publish(

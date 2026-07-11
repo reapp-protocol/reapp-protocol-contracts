@@ -27,6 +27,7 @@ mod payment;
 mod registry;
 mod storage;
 
+pub use admin::{PendingUpgrade, UPGRADE_DELAY_SECONDS};
 pub use error::Error;
 pub use mandate::{Mandate, Status};
 
@@ -69,10 +70,29 @@ impl MandateRegistry {
         admin::is_paused(&env)
     }
 
-    /// Replace this contract's WASM while preserving its address and storage.
-    /// Authorized by the current administrator.
-    pub fn upgrade(env: Env, new_wasm_hash: BytesN<32>) {
-        admin::upgrade(&env, new_wasm_hash)
+    /// Schedule a same-address WASM upgrade after the fixed 24-hour delay.
+    pub fn schedule_upgrade(env: Env, new_wasm_hash: BytesN<32>) -> Result<u64, Error> {
+        admin::schedule_upgrade(&env, new_wasm_hash)
+    }
+
+    /// Cancel the currently scheduled upgrade.
+    pub fn cancel_upgrade(env: Env) -> Result<(), Error> {
+        admin::cancel_upgrade(&env)
+    }
+
+    /// Execute the scheduled upgrade after the delay while the contract is paused.
+    pub fn execute_upgrade(env: Env) -> Result<(), Error> {
+        admin::execute_upgrade(&env)
+    }
+
+    /// Read the pending upgrade, including hash and earliest execution time.
+    pub fn get_pending_upgrade(env: Env) -> Option<PendingUpgrade> {
+        storage::get_pending_upgrade(&env)
+    }
+
+    /// Fixed timelock duration in seconds.
+    pub fn get_upgrade_delay(_env: Env) -> u64 {
+        UPGRADE_DELAY_SECONDS
     }
 
     /// Store a user-signed mandate from its authorized parameters. The contract
