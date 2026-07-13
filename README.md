@@ -175,6 +175,12 @@ flowchart LR
 
 Zero warnings tolerated. Same gate, local and CI.
 
+The current gate check runs **26 simple tests** and **63 composite tests**. Each
+suite includes a positive timelocked-upgrade lifecycle that uploads replacement
+WASM, proves early and unpaused execution fail, executes while paused, calls the
+replacement at the original contract ID, and confirms administrator, pause,
+pending-upgrade, and mandate storage behavior across the swap.
+
 ---
 
 ## 🧾 Current Release Evidence

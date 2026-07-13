@@ -160,6 +160,11 @@ persistent `Mandate` records, pools, and membership lists remain at the same
 address; an upgrade does not rerun `__constructor`. The admin can remove a
 proposal with `cancel_upgrade()` before execution.
 
+The test suite exercises the complete positive lifecycle with uploaded
+replacement WASM: delay-minus-one rejection, exact-time rejection while
+unpaused, paused execution, a replacement method at this same contract address,
+and preserved administrator, pause, pending-upgrade, and mandate storage.
+
 ## Pool Lifecycle
 
 ```mermaid

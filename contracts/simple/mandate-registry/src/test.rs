@@ -6,15 +6,40 @@
 
 use soroban_sdk::testutils::{Address as _, Ledger as _};
 use soroban_sdk::token::{StellarAssetClient, TokenClient};
-use soroban_sdk::{Address, BytesN, Env};
+use soroban_sdk::{symbol_short, Address, Bytes, BytesN, Env, IntoVal};
 
-use crate::{Error, MandateRegistry, MandateRegistryClient, Status};
+use crate::{
+    Error, MandateRegistry, MandateRegistryClient, PendingUpgrade, Status, UPGRADE_DELAY_SECONDS,
+};
 
 const NOW: u64 = 1_000;
 const EXPIRY: u64 = 10_000;
 const MAX: i128 = 50_000_000; // 5.00 USDC
 const SPEND: i128 = 10_000_000; // 1.00 USDC
 const FUNDED: i128 = 1_000_000_000;
+
+// Protocol-21 `add(u64,u64)->u64` fixture from soroban-sdk 22.0.11. Keeping
+// the small fixture as text makes the test portable without a generated binary
+// or build-script dependency.
+const REPLACEMENT_WASM_HEX: &str = "0061736d0100000001140460017e017e60027f7e0060027e7e017e600000020d020169013000000169015f0000030605010203030305030100100619037f01418080c0000b7f00418080c0000b7f00418080c0000b072f05066d656d6f72790200036164640003015f00060a5f5f646174615f656e6403010b5f5f686561705f6261736503020a8c02055d02017f017e024002402001a741ff0171220241c000460d00024020024106460d00420121034283908080800121010c020b20014208882101420021030c010b42002103200110808080800021010b20002001370308200020033703000b990101017f23808080800041206b2202248080808000200241106a20001082808080000240024020022802100d0020022903182100200220011082808080002002290300a70d00200020022903087c22012000540d0102400240200142ffffffffffffffff00560d00200142088642068421000c010b200110818080800021000b200241206a24808080800020000f0b00000b108480808000000b0900108580808000000b040000000b02000b004b0e636f6e7472616374737065637630000000000000000000000003616464000000000200000000000000016100000000000006000000000000000162000000000000060000000100000006001e11636f6e7472616374656e766d6574617630000000000000001500000000007b0e636f6e74726163746d65746176300000000000000005727376657200000000000006312e37342e3000000000000000000008727373646b7665720000003932312e302e312d707265766965772e312331313663333562633965303366346231623565363562356565383331616530663836616139326664000000";
+
+fn replacement_wasm(env: &Env) -> Bytes {
+    fn nibble(value: u8) -> u8 {
+        match value {
+            b'0'..=b'9' => value - b'0',
+            b'a'..=b'f' => value - b'a' + 10,
+            _ => panic!("invalid replacement WASM hex"),
+        }
+    }
+    let encoded = REPLACEMENT_WASM_HEX.as_bytes();
+    let mut wasm = Bytes::new(env);
+    let mut index = 0;
+    while index < encoded.len() {
+        wasm.push_back((nibble(encoded[index]) << 4) | nibble(encoded[index + 1]));
+        index += 2;
+    }
+    wasm
+}
 
 struct World {
     env: Env,
@@ -212,6 +237,62 @@ fn admin_methods_require_authorization() {
     assert!(c.try_execute_upgrade().is_err());
     assert!(!c.is_paused());
     assert_eq!(c.get_admin(), w.admin);
+}
+
+#[test]
+fn timelocked_upgrade_replaces_wasm_at_same_address_and_preserves_storage() {
+    let w = setup();
+    let c = w.client();
+    w.register();
+    c.execute_payment(&w.id, &SPEND, &0);
+    let mandate_before = c.get_mandate(&w.id);
+    let contract_before = w.contract.clone();
+
+    let wasm_hash = w
+        .env
+        .deployer()
+        .upload_contract_wasm(replacement_wasm(&w.env));
+    let execute_after = c.schedule_upgrade(&wasm_hash);
+    assert_eq!(execute_after, NOW + UPGRADE_DELAY_SECONDS);
+    assert_eq!(
+        c.get_pending_upgrade(),
+        Some(PendingUpgrade {
+            wasm_hash: wasm_hash.clone(),
+            execute_after,
+        })
+    );
+
+    w.env.ledger().set_timestamp(execute_after - 1);
+    assert_eq!(c.try_execute_upgrade(), Err(Ok(Error::UpgradeNotReady)));
+    w.env.ledger().set_timestamp(execute_after);
+    assert_eq!(
+        c.try_execute_upgrade(),
+        Err(Ok(Error::UpgradeRequiresPause))
+    );
+
+    c.pause();
+    c.execute_upgrade();
+
+    let sum: u64 = w.env.invoke_contract(
+        &contract_before,
+        &symbol_short!("add"),
+        (2_u64, 3_u64).into_val(&w.env),
+    );
+    assert_eq!(sum, 5);
+    assert_eq!(w.contract, contract_before);
+
+    let (admin, paused, pending, mandate_after) = w.env.as_contract(&w.contract, || {
+        (
+            crate::storage::get_admin(&w.env),
+            crate::storage::is_paused(&w.env),
+            crate::storage::get_pending_upgrade(&w.env),
+            crate::storage::get_mandate(&w.env, w.id.clone()).unwrap(),
+        )
+    });
+    assert_eq!(admin, w.admin);
+    assert!(paused);
+    assert_eq!(pending, None);
+    assert_eq!(mandate_after, mandate_before);
 }
 
 #[test]
