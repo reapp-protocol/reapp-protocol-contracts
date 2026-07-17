@@ -240,6 +240,32 @@ fn admin_methods_require_authorization() {
 }
 
 #[test]
+fn cancel_and_execute_require_authorization_with_ready_upgrade() {
+    let w = setup();
+    let c = w.client();
+    w.register();
+    let mandate_before = c.get_mandate(&w.id);
+    let wasm_hash = w
+        .env
+        .deployer()
+        .upload_contract_wasm(replacement_wasm(&w.env));
+    let execute_after = c.schedule_upgrade(&wasm_hash);
+    c.pause();
+    w.env.ledger().set_timestamp(execute_after);
+    let pending_before = c.get_pending_upgrade();
+
+    w.env.set_auths(&[]);
+
+    assert!(matches!(c.try_cancel_upgrade(), Err(Err(_))));
+    assert_eq!(c.get_pending_upgrade(), pending_before);
+    assert!(matches!(c.try_execute_upgrade(), Err(Err(_))));
+    assert_eq!(c.get_pending_upgrade(), pending_before);
+    assert!(c.is_paused());
+    assert_eq!(c.get_admin(), w.admin);
+    assert_eq!(c.get_mandate(&w.id), mandate_before);
+}
+
+#[test]
 fn timelocked_upgrade_replaces_wasm_at_same_address_and_preserves_storage() {
     let w = setup();
     let c = w.client();
