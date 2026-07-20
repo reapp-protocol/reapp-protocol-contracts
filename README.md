@@ -37,7 +37,7 @@ flowchart LR
 
 | Folder | Current testnet contract | Historical testnet contract |
 |---|---|---|
-| [`contracts/simple`](contracts/simple) | [`CC6JMPDH…CRWE`](https://stellar.expert/explorer/testnet/contract/CC6JMPDHRPBR2HBLJKRCIKV54HXDV2RFXDKW6MALQKWM6JEAJQHICRWE) — release `0.2.0` | [`CB4KOTLG…7ZOA`](https://stellar.expert/explorer/testnet/contract/CB4KOTLGMM5JEPFPU6QBJLADIBP3RSGUX44FOYTFRICNXKKFPYIW7ZOA) — immutable `v0.1.0` |
+| [`contracts/simple`](contracts/simple) | [`CCHQ5G4Y…CZRM`](https://stellar.expert/explorer/testnet/contract/CCHQ5G4Y4YBMY6D3TYYJSVJVCKUM22Q6TMKCCHVAHY4X7K6QELQACZRM) — release `0.2.1` | [`CB4KOTLG…7ZOA`](https://stellar.expert/explorer/testnet/contract/CB4KOTLGMM5JEPFPU6QBJLADIBP3RSGUX44FOYTFRICNXKKFPYIW7ZOA) — immutable `v0.1.0` |
 | [`contracts/composites`](contracts/composites) | [`CCYRF7FK…HEYW`](https://stellar.expert/explorer/testnet/contract/CCYRF7FKYGSNWX5I7WLYXZ6LNUNVCSPE4BOTQFVWVTABOHAP52DYHEYW) — release `0.3.0` | [`CBALARHT…WOQX`](https://stellar.expert/explorer/testnet/contract/CBALARHTO5D7JLWHZ5KST4QNIRC64JI5H3DQDHMIUBSRLLOVS6FCWOQX) — immutable `v0.2.0` |
 
 Both contracts keep the crate name `mandate-registry`, but their package versions and release tags are distinct. The historical deployments remain available as **immutable source anchors**; the current deployments add **pause**, **authority rotation**, and **timelocked same-address upgrades**.
@@ -48,7 +48,7 @@ Both contracts keep the crate name `mandate-registry`, but their package version
 
 Both current contracts bolt on the same operational surface — **without touching existing mandate or pool encodings**.
 
-### Upgrade Lifecycle — 24-Hour Timelock, No Exceptions
+### Upgrade Lifecycle — Fixed Timelock, No Exceptions
 
 ```mermaid
 stateDiagram-v2
@@ -57,7 +57,7 @@ stateDiagram-v2
 
     Active --> UpgradeScheduled : schedule_upgrade(wasm_hash)\n🔑 admin only
     UpgradeScheduled --> Active : cancel_upgrade()\n🔑 admin only
-    UpgradeScheduled --> Timelock : ⏳ 86,400s fixed delay
+    UpgradeScheduled --> Timelock : ⏳ fixed contract delay
 
     state Timelock {
         [*] --> Waiting
@@ -68,7 +68,10 @@ stateDiagram-v2
     Executed --> Active : ♻️ new WASM\nsame contract ID\nstorage preserved
 ```
 
-**Three gates on `execute_upgrade`:** current admin authorization, elapsed 24-hour delay, and paused state. Contract ID and storage survive the swap.
+**Three gates on `execute_upgrade`:** current admin authorization, elapsed fixed
+delay, and paused state. The current Simple testnet contract enforces 3,600
+seconds; the Composite contract enforces 86,400 seconds. Contract ID and storage
+survive the swap.
 
 ### Emergency Stop — Pause State Machine
 
@@ -128,11 +131,11 @@ flowchart TB
 | `set_admin` | `(new_admin: Address)` | Requires the current admin and transfers future control. |
 | `pause` / `unpause` | `() -> ()` | Require the current admin and are idempotent. |
 | `is_paused` | `() -> bool` | Exposes the emergency-stop state without authorization. |
-| `schedule_upgrade` | `(new_wasm_hash: BytesN<32>) -> u64` | Requires the current admin and starts the fixed 24-hour delay. |
+| `schedule_upgrade` | `(new_wasm_hash: BytesN<32>) -> u64` | Requires the current admin and starts the contract's fixed delay. |
 | `cancel_upgrade` | `() -> ()` | Requires the current admin and removes the pending upgrade. |
 | `execute_upgrade` | `() -> ()` | Requires the current admin, elapsed delay, and paused state; replaces WASM while preserving contract ID and storage. |
 | `get_pending_upgrade` | `() -> Option<PendingUpgrade>` | Returns the pending hash and earliest execution timestamp. |
-| `get_upgrade_delay` | `() -> u64` | Returns `86,400` seconds. |
+| `get_upgrade_delay` | `() -> u64` | Returns `3,600` seconds for Simple and `86,400` seconds for Composite. |
 
 ---
 
@@ -185,17 +188,21 @@ pending-upgrade, and mandate storage behavior across the swap.
 
 ## 🧾 Current Release Evidence
 
-Both current deployments use the **exact WASM** produced by the [StellarExpert soroban-build-workflow](https://github.com/stellar-expert/soroban-build-workflow) at commit `eed2fc012b1eee9a7345d353c55e7f575167dcfc`.
+Both current deployments use the **exact tagged and attested WASM** produced by
+the [StellarExpert soroban-build-workflow](https://github.com/stellar-expert/soroban-build-workflow).
+The Simple release comes from commit `7e388ddab9f52b2a9d9ac97e0ad358f63835d452`;
+the Composite release comes from commit `eed2fc012b1eee9a7345d353c55e7f575167dcfc`.
 
 | Contract | Release artifact | SHA-256 and on-chain hash | Deployment | Attestation |
 |---|---|---|---|---|
-| Simple `0.2.0` | [`mandate-registry_v0.2.0.wasm`](https://github.com/reapp-protocol/reapp-protocol-contracts/releases/tag/simple-v0.2.0_contracts_simple_mandate_registry_mandate-registry_pkg0.2.0_cli25.1.0) | `13f7023d4a361b6e49d3d39f61f55c5eeece51a602013a3cddae420d2ce8552b` | [`8de14e51…5f066`](https://stellar.expert/explorer/testnet/tx/8de14e51a41aaad7a59d91efdff8e587d6f8d31e30688b992257f9dd84c5f066) | [GitHub provenance](https://github.com/reapp-protocol/reapp-protocol-contracts/attestations/34875671) |
+| Simple `0.2.1` | [`mandate-registry_v0.2.1.wasm`](https://github.com/reapp-protocol/reapp-protocol-contracts/releases/download/simple-v0.2.1_contracts_simple_mandate_registry_mandate-registry_pkg0.2.1_cli25.1.0/mandate-registry_v0.2.1.wasm) | `ba370a80369daa0a0dea2554410dca6f2a9f7a76ba707cb92a83434e2fe76e87` | [`46679351…9317`](https://stellar.expert/explorer/testnet/tx/46679351ed75b3b07d7aa90dfbc2a58e7d3695d71d8fffa9fbcf89bff27f9317) | [GitHub provenance](https://github.com/reapp-protocol/reapp-protocol-contracts/attestations/36124459) |
 | Composite `0.3.0` | [`mandate-registry_v0.3.0.wasm`](https://github.com/reapp-protocol/reapp-protocol-contracts/releases/tag/composites-v0.3.0_contracts_composites_mandate_registry_mandate-registry_pkg0.3.0_cli25.1.0) | `b3368d7fb68017d078792b125dff0389d4c4c893c86fb075baeb9100f0e0f0a1` | [`a93d1d7d…35bbb`](https://stellar.expert/explorer/testnet/tx/a93d1d7d34132cc185d1a89f4fa2c669fba7ff4b1ca1798ab921250776b35bbb) | [GitHub provenance](https://github.com/reapp-protocol/reapp-protocol-contracts/attestations/34875680) |
 
-**Historical anchors:**
+**Historical and previous deployment hashes:**
 
-| Contract | Immutable hash |
+| Contract | Recorded hash |
 |---|---|
+| Simple `v0.2.0` published deployment | `13f7023d4a361b6e49d3d39f61f55c5eeece51a602013a3cddae420d2ce8552b` |
 | Simple `v0.1.0` | `4eb1b9430bd4a978348e7efc283a0bf599df048216a43b582921c17daed8c69e` |
 | Composite `v0.2.0` | `6333c20b490a570ed7b1c8cbfbf382da00ee8a0d1e4ef1ba013d02fa1cf16f44` |
 

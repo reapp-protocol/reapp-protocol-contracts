@@ -112,13 +112,13 @@ stateDiagram-v2
     Active --> Active: rotate admin
     Paused --> Paused: rotate admin
     Active --> Active: admin schedules upgrade
-    Paused --> Paused: after 24h admin executes upgrade
+    Paused --> Paused: after 1h admin executes upgrade
 ```
 
 The pause is intentionally narrow: it blocks only `execute_payment`, the sole
 money-moving path. Registration, validation, reads, and user revocation remain
 available, so an emergency stop cannot trap consent or mutate mandate state.
-The operating sequence schedules an exact release hash, waits 24 hours, pauses,
+The operating sequence schedules an exact release hash, waits one hour, pauses,
 executes the upgrade at the same contract address, verifies the executable and
 state, then unpauses only after live gate checks pass.
 
@@ -131,7 +131,7 @@ state, then unpauses only after live gate checks pass.
 | `PendingUpgrade` | instance `Option<PendingUpgrade>` | `None` | Stores the proposed WASM hash and `execute_after` timestamp. |
 
 `schedule_upgrade(new_wasm_hash)` stores the uploaded `BytesN<32>` executable
-hash and an execution time 86,400 seconds later. `execute_upgrade()` requires
+hash and an execution time 3,600 seconds later. `execute_upgrade()` requires
 the current admin, elapsed delay, and paused state before calling the
 current-contract WASM update operation. The contract ID, `Admin`, `Paused`, and
 all persistent `Mandate` records remain at the same address; an upgrade does
@@ -195,9 +195,9 @@ validation and execution.
 | `is_paused()` | None | No | `bool` | Apps and operators can inspect the emergency-stop state. |
 | `schedule_upgrade(new_wasm_hash)` | current `admin` | Yes | `u64` | Records a release hash and returns its earliest execution time. |
 | `cancel_upgrade()` | current `admin` | Yes | `()` | Removes the pending upgrade before execution. |
-| `execute_upgrade()` | current `admin` | Yes | `()` | After 24 hours and while paused, changes the executable without changing the contract ID or storage. |
+| `execute_upgrade()` | current `admin` | Yes | `()` | After one hour and while paused, changes the executable without changing the contract ID or storage. |
 | `get_pending_upgrade()` | None | No | `Option<PendingUpgrade>` | Exposes the pending hash and earliest execution time. |
-| `get_upgrade_delay()` | None | No | `u64` | Returns the fixed delay, `86,400` seconds. |
+| `get_upgrade_delay()` | None | No | `u64` | Returns the fixed delay, `3,600` seconds. |
 | `register_mandate(user, agent, merchant, asset, max_amount, expiry, vc_hash)` | `user` | Yes | `BytesN<32>` mandate id | The user authorized the exact merchant, asset, budget, expiry, and agent. |
 | `validate_mandate(mandate_id, amount, merchant)` | None | No | `()` | The mandate rules accept a spend without consuming it; `is_paused` reports the separate operational state. |
 | `execute_payment(mandate_id, amount, expected_seq)` | `agent` | Yes | `()` | The authorized spend was validated, consumed, sequence-checked, and transferred atomically. |
@@ -220,27 +220,38 @@ validation and execution.
   remain compatible across implementation upgrades.
 - Typed errors and events make failures and successful state changes visible.
 
-## Release 0.2.0
+## Release 0.2.1 — One-Hour Upgrade Validation
 
 | | |
 |---|---|
-| Status | Deployed and live-checked on Stellar testnet |
-| Source tag | `simple-v0.2.0` at `eed2fc012b1eee9a7345d353c55e7f575167dcfc` |
+| Status | Deployed, live-checked, and source-verified on Stellar testnet |
+| Source tag | `simple-v0.2.1` at `7e388ddab9f52b2a9d9ac97e0ad358f63835d452` |
 | SDK role | Default simple MandateRegistry for `@reapp-sdk/stellar` |
 | Constructor | `admin: Address` |
 | Admin | `GA2B3YY27OY6AWT2VXMXUDBSAHVOLU2ST6QWJJJLOIGDQHJDXO4RL4XH` |
+| Contract id | [`CCHQ5G4Y4YBMY6D3TYYJSVJVCKUM22Q6TMKCCHVAHY4X7K6QELQACZRM`](https://stellar.expert/explorer/testnet/contract/CCHQ5G4Y4YBMY6D3TYYJSVJVCKUM22Q6TMKCCHVAHY4X7K6QELQACZRM) |
+| Release artifact | [`mandate-registry_v0.2.1.wasm`](https://github.com/reapp-protocol/reapp-protocol-contracts/releases/download/simple-v0.2.1_contracts_simple_mandate_registry_mandate-registry_pkg0.2.1_cli25.1.0/mandate-registry_v0.2.1.wasm) |
+| Artifact and on-chain hash | `ba370a80369daa0a0dea2554410dca6f2a9f7a76ba707cb92a83434e2fe76e87` |
+| Build attestation | [GitHub provenance](https://github.com/reapp-protocol/reapp-protocol-contracts/attestations/36124459) |
+| Fixed upgrade delay | `3,600` seconds (one hour) |
+| WASM upload transaction | [`806b83b1bfb91155bce6fbcaae154943391a49d1ec1a8f606a2508ea8e6b3cea`](https://stellar.expert/explorer/testnet/tx/806b83b1bfb91155bce6fbcaae154943391a49d1ec1a8f606a2508ea8e6b3cea) |
+| Deployment transaction | [`46679351ed75b3b07d7aa90dfbc2a58e7d3695d71d8fffa9fbcf89bff27f9317`](https://stellar.expert/explorer/testnet/tx/46679351ed75b3b07d7aa90dfbc2a58e7d3695d71d8fffa9fbcf89bff27f9317) |
+| New error | `Paused = 10` |
+| Compatibility | All five original methods and the `Mandate` encoding are unchanged |
+
+Live checks confirmed the exact on-chain hash, `get_admin`,
+`get_upgrade_delay = 3600`, `is_paused = false`, and no pending upgrade.
+
+## Previous Published v0.2.0 Deployment
+
+| | |
+|---|---|
+| Source tag | `simple-v0.2.0` at `eed2fc012b1eee9a7345d353c55e7f575167dcfc` |
 | Contract id | [`CC6JMPDHRPBR2HBLJKRCIKV54HXDV2RFXDKW6MALQKWM6JEAJQHICRWE`](https://stellar.expert/explorer/testnet/contract/CC6JMPDHRPBR2HBLJKRCIKV54HXDV2RFXDKW6MALQKWM6JEAJQHICRWE) |
 | Release artifact | [`mandate-registry_v0.2.0.wasm`](https://github.com/reapp-protocol/reapp-protocol-contracts/releases/tag/simple-v0.2.0_contracts_simple_mandate_registry_mandate-registry_pkg0.2.0_cli25.1.0) |
 | Artifact and on-chain hash | `13f7023d4a361b6e49d3d39f61f55c5eeece51a602013a3cddae420d2ce8552b` |
 | Build attestation | [GitHub provenance](https://github.com/reapp-protocol/reapp-protocol-contracts/attestations/34875671) |
 | Deployment transaction | [`8de14e51a41aaad7a59d91efdff8e587d6f8d31e30688b992257f9dd84c5f066`](https://stellar.expert/explorer/testnet/tx/8de14e51a41aaad7a59d91efdff8e587d6f8d31e30688b992257f9dd84c5f066) |
-| Live pause transaction | [`a80eb9cdbb9ca66b53bed4181a9f28ff5dd3560480abb4903b6ee4be68be03b4`](https://stellar.expert/explorer/testnet/tx/a80eb9cdbb9ca66b53bed4181a9f28ff5dd3560480abb4903b6ee4be68be03b4) |
-| Live unpause transaction | [`8c9b905c34ed54d33defc07e5827a5ce5bef27175c85151c63dc72e2a732ff2d`](https://stellar.expert/explorer/testnet/tx/8c9b905c34ed54d33defc07e5827a5ce5bef27175c85151c63dc72e2a732ff2d) |
-| New error | `Paused = 10` |
-| Compatibility | All five original methods and the `Mandate` encoding are unchanged |
-
-Live checks confirmed `get_admin`, `is_paused = false`, `pause`,
-`is_paused = true`, `unpause`, and the final `is_paused = false` state.
 
 ## Historical Verified Deployment
 
@@ -266,9 +277,10 @@ shasum -a 256 onchain.wasm
 
 ## Source Verification
 
-The `v0.1.0` tag and matching release artifact remain the historical
-source-verification anchor. The current `0.2.0` testnet deployment uses the
-exact hosted artifact and matching on-chain hash recorded above.
+The `v0.1.0` and `simple-v0.2.0` tags and matching release artifacts remain
+historical source-verification anchors. The current `simple-v0.2.1` one-hour
+deployment uses the exact tagged artifact and matching on-chain hash recorded
+above.
 
 Future simple-contract verification releases should build from this folder:
 
@@ -282,5 +294,5 @@ cargo build --target wasm32v1-none --release
 
 Future same-address upgrades repeat the tagged artifact, attestation, interface,
 and hash checks; upload the exact WASM, call
-`schedule_upgrade(new_wasm_hash)`, wait 24 hours, pause, call
+`schedule_upgrade(new_wasm_hash)`, wait one hour, pause, call
 `execute_upgrade()`, rerun live checks at the same contract ID, then unpause.
