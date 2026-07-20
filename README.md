@@ -190,12 +190,14 @@ pending-upgrade, and mandate storage behavior across the swap.
 
 Both current deployments use the **exact tagged and attested WASM** produced by
 the [StellarExpert soroban-build-workflow](https://github.com/stellar-expert/soroban-build-workflow).
-The Simple release comes from commit `7e388ddab9f52b2a9d9ac97e0ad358f63835d452`;
-the Composite release comes from commit `eed2fc012b1eee9a7345d353c55e7f575167dcfc`.
+The live Simple implementation is the `simple-v0.2.3` cleanup from commit
+`eab02453cf06efa914d043df5295995c4dbc7b57`, activated through the verified
+same-address upgrade flow; the Composite release comes from commit
+`eed2fc012b1eee9a7345d353c55e7f575167dcfc`.
 
 | Contract | Release artifact | SHA-256 and on-chain hash | Deployment | Attestation |
 |---|---|---|---|---|
-| Simple `0.2.1` | [`mandate-registry_v0.2.1.wasm`](https://github.com/reapp-protocol/reapp-protocol-contracts/releases/download/simple-v0.2.1_contracts_simple_mandate_registry_mandate-registry_pkg0.2.1_cli25.1.0/mandate-registry_v0.2.1.wasm) | `ba370a80369daa0a0dea2554410dca6f2a9f7a76ba707cb92a83434e2fe76e87` | [`46679351…9317`](https://stellar.expert/explorer/testnet/tx/46679351ed75b3b07d7aa90dfbc2a58e7d3695d71d8fffa9fbcf89bff27f9317) | [GitHub provenance](https://github.com/reapp-protocol/reapp-protocol-contracts/attestations/36124459) |
+| Simple `0.2.3` cleanup | [`mandate-registry_v0.2.3.wasm`](https://github.com/reapp-protocol/reapp-protocol-contracts/releases/download/simple-v0.2.3_contracts_simple_mandate_registry_mandate-registry_pkg0.2.3_cli25.1.0/mandate-registry_v0.2.3.wasm) | `ba370a80369daa0a0dea2554410dca6f2a9f7a76ba707cb92a83434e2fe76e87` | [`afaa1811…4f828`](https://stellar.expert/explorer/testnet/tx/afaa181115a6a1fd19c1ef22f70243dac9da333db99ef36bd0d6d4d90964f828) | [GitHub provenance](https://github.com/reapp-protocol/reapp-protocol-contracts/attestations/36127795) |
 | Composite `0.3.0` | [`mandate-registry_v0.3.0.wasm`](https://github.com/reapp-protocol/reapp-protocol-contracts/releases/tag/composites-v0.3.0_contracts_composites_mandate_registry_mandate-registry_pkg0.3.0_cli25.1.0) | `b3368d7fb68017d078792b125dff0389d4c4c893c86fb075baeb9100f0e0f0a1` | [`a93d1d7d…35bbb`](https://stellar.expert/explorer/testnet/tx/a93d1d7d34132cc185d1a89f4fa2c669fba7ff4b1ca1798ab921250776b35bbb) | [GitHub provenance](https://github.com/reapp-protocol/reapp-protocol-contracts/attestations/34875680) |
 
 **Historical and previous deployment hashes:**

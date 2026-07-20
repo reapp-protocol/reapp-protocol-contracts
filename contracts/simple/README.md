@@ -244,11 +244,12 @@ Live checks confirmed the exact on-chain hash, `get_admin`,
 
 ## Live Same-Address Upgrade Validation
 
-Step 1 is **VERIFIED LIVE** on Stellar testnet at the unchanged contract id:
+Both upgrade steps are **VERIFIED LIVE** on Stellar testnet at the unchanged
+contract id:
 
 [`CCHQ5G4Y4YBMY6D3TYYJSVJVCKUM22Q6TMKCCHVAHY4X7K6QELQACZRM`](https://stellar.expert/explorer/testnet/contract/CCHQ5G4Y4YBMY6D3TYYJSVJVCKUM22Q6TMKCCHVAHY4X7K6QELQACZRM)
 
-Step 1 adds one temporary read-only method without changing the contract
+Step 1 added one temporary read-only method without changing the contract
 address, mandate storage, payment behavior, administrator, or one-hour delay:
 
 ```rust
@@ -257,14 +258,17 @@ pub fn upgrade_test_version(_env: Env) -> u32 {
 }
 ```
 
-The live `upgrade_test_version()` invocation returns `1`.
+After the full one-hour timelock, Step 2 restored the cleanup implementation.
+The cleanup removes `upgrade_test_version()` while retaining the same contract
+address, administrator, storage, payment behavior, and `3,600`-second delay.
 
 | State | Release | WASM hash | Marker | Contract id |
 |---|---|---|---|---|
 | Baseline | [`simple-v0.2.1`](https://github.com/reapp-protocol/reapp-protocol-contracts/releases/tag/simple-v0.2.1_contracts_simple_mandate_registry_mandate-registry_pkg0.2.1_cli25.1.0) | `ba370a80369daa0a0dea2554410dca6f2a9f7a76ba707cb92a83434e2fe76e87` | absent | `CCHQ5G4Y4YBMY6D3TYYJSVJVCKUM22Q6TMKCCHVAHY4X7K6QELQACZRM` |
 | Step 1 verified live | [`simple-v0.2.2`](https://github.com/reapp-protocol/reapp-protocol-contracts/releases/tag/simple-v0.2.2_contracts_simple_mandate_registry_mandate-registry_pkg0.2.2_cli25.1.0) | `627a4db17dff863a1520eda9774b11a3c10a101554ef7dcaf406de8a53906760` | `upgrade_test_version() -> 1` | `CCHQ5G4Y4YBMY6D3TYYJSVJVCKUM22Q6TMKCCHVAHY4X7K6QELQACZRM` |
+| Step 2 verified live | [`simple-v0.2.3`](https://github.com/reapp-protocol/reapp-protocol-contracts/releases/tag/simple-v0.2.3_contracts_simple_mandate_registry_mandate-registry_pkg0.2.3_cli25.1.0) | `ba370a80369daa0a0dea2554410dca6f2a9f7a76ba707cb92a83434e2fe76e87` | absent | `CCHQ5G4Y4YBMY6D3TYYJSVJVCKUM22Q6TMKCCHVAHY4X7K6QELQACZRM` |
 
-### Live execution evidence
+### Step 1 execution evidence
 
 - Source commit: [`cecef5c5ffafd367cb97cccb4ddf84dd5b5191e3`](https://github.com/reapp-protocol/reapp-protocol-contracts/commit/cecef5c5ffafd367cb97cccb4ddf84dd5b5191e3)
 - Schedule transaction: [`a979c6c01845d52c835b4ad902f8ec6c1be1002d281491ffa7c21e46167fa1f2`](https://stellar.expert/explorer/testnet/tx/a979c6c01845d52c835b4ad902f8ec6c1be1002d281491ffa7c21e46167fa1f2), with `execute_after = 1784544441`
@@ -277,11 +281,30 @@ The live `upgrade_test_version()` invocation returns `1`.
 Final live checks confirmed the same contract id, exact v0.2.2 WASM hash,
 unchanged admin `GA2B3YY27OY6AWT2VXMXUDBSAHVOLU2ST6QWJJJLOIGDQHJDXO4RL4XH`,
 `get_pending_upgrade = null`, `get_upgrade_delay = 3600`,
-`upgrade_test_version() = 1`, and `is_paused = false`. StellarExpert reports
-[source verified and Versions 2](https://stellar.expert/explorer/testnet/contract/CCHQ5G4Y4YBMY6D3TYYJSVJVCKUM22Q6TMKCCHVAHY4X7K6QELQACZRM).
+`upgrade_test_version() = 1`, and `is_paused = false` before Step 2 began.
 
-Step 2 cleanup/revert is prepared but **not scheduled**, pending review. npm
-was untouched.
+### Step 2 cleanup execution evidence
+
+- Cleanup source commit: [`eab02453cf06efa914d043df5295995c4dbc7b57`](https://github.com/reapp-protocol/reapp-protocol-contracts/commit/eab02453cf06efa914d043df5295995c4dbc7b57)
+- Cleanup artifact attestation: [GitHub provenance](https://github.com/reapp-protocol/reapp-protocol-contracts/attestations/36127795)
+- Cleanup artifact hash: `ba370a80369daa0a0dea2554410dca6f2a9f7a76ba707cb92a83434e2fe76e87`
+- Schedule transaction: [`a71f34c64ea158bd66aade1572262df591d88e76f5b5027d9572c3be8c790346`](https://stellar.expert/explorer/testnet/tx/a71f34c64ea158bd66aade1572262df591d88e76f5b5027d9572c3be8c790346), with `execute_after = 1784553702`
+- Normal early execution: rejected during simulation with `Error(Contract,#12)`
+- Deliberate early on-chain proof: [`3d88253b93603ddb1e1603dde12ad30b822c380cd71285fc5c68996d4133c3de`](https://stellar.expert/explorer/testnet/tx/3d88253b93603ddb1e1603dde12ad30b822c380cd71285fc5c68996d4133c3de), failed with `Error(Contract,#12)` and zero contract writes
+- Pause transaction: [`9033f2865e7e3152d29fdc8ca8078ae83c19b5f1f1f17de79b100db71a864f7d`](https://stellar.expert/explorer/testnet/tx/9033f2865e7e3152d29fdc8ca8078ae83c19b5f1f1f17de79b100db71a864f7d)
+- Execute transaction: [`afaa181115a6a1fd19c1ef22f70243dac9da333db99ef36bd0d6d4d90964f828`](https://stellar.expert/explorer/testnet/tx/afaa181115a6a1fd19c1ef22f70243dac9da333db99ef36bd0d6d4d90964f828)
+- Unpause transaction: [`e5518da0ab72ed960c5b96e82e13182f79df943d79eaae1262296afba2bd6b53`](https://stellar.expert/explorer/testnet/tx/e5518da0ab72ed960c5b96e82e13182f79df943d79eaae1262296afba2bd6b53)
+
+Final live checks confirmed the same full contract id, exact v0.2.3 cleanup
+hash, unchanged admin
+`GA2B3YY27OY6AWT2VXMXUDBSAHVOLU2ST6QWJJJLOIGDQHJDXO4RL4XH`,
+`get_pending_upgrade = null`, `get_upgrade_delay = 3600`, and
+`is_paused = false`. The live interface rejects `upgrade_test_version` as an
+unknown method. StellarExpert reports
+[source verified and Versions 3](https://stellar.expert/explorer/testnet/contract/CCHQ5G4Y4YBMY6D3TYYJSVJVCKUM22Q6TMKCCHVAHY4X7K6QELQACZRM).
+
+This validates both directions of same-address upgradability with the real
+one-hour timelock. npm packages were not changed or published.
 
 ## Previous Published v0.2.0 Deployment
 
@@ -319,9 +342,10 @@ shasum -a 256 onchain.wasm
 ## Source Verification
 
 The `v0.1.0` and `simple-v0.2.0` tags and matching release artifacts remain
-historical source-verification anchors. The current `simple-v0.2.1` one-hour
-deployment uses the exact tagged artifact and matching on-chain hash recorded
-above.
+historical source-verification anchors. The current same-address contract uses
+the exact tagged `simple-v0.2.3` cleanup artifact and matching on-chain hash
+recorded above. That cleanup digest is byte-for-byte identical to the verified
+`simple-v0.2.1` baseline digest.
 
 Future simple-contract verification releases should build from this folder:
 
