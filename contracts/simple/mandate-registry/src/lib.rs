@@ -70,7 +70,7 @@ impl MandateRegistry {
         admin::is_paused(&env)
     }
 
-    /// Schedule a same-address WASM upgrade after the fixed 24-hour delay.
+    /// Schedule a same-address WASM upgrade after the fixed one-hour delay.
     pub fn schedule_upgrade(env: Env, new_wasm_hash: BytesN<32>) -> Result<u64, Error> {
         admin::schedule_upgrade(&env, new_wasm_hash)
     }

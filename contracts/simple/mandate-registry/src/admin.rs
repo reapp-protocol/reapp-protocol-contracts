@@ -6,7 +6,7 @@ use soroban_sdk::{contracttype, Address, BytesN, Env};
 
 use crate::{events, storage, Error};
 
-pub const UPGRADE_DELAY_SECONDS: u64 = 86_400;
+pub const UPGRADE_DELAY_SECONDS: u64 = 3_600;
 
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
