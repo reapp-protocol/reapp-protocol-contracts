@@ -244,11 +244,9 @@ Live checks confirmed the exact on-chain hash, `get_admin`,
 
 ## Live Same-Address Upgrade Validation
 
-The one-hour testnet upgrade is running against the current Simple contract:
+Step 1 is **VERIFIED LIVE** on Stellar testnet at the unchanged contract id:
 
-```text
-CCHQ5G4Y4YBMY6D3TYYJSVJVCKUM22Q6TMKCCHVAHY4X7K6QELQACZRM
-```
+[`CCHQ5G4Y4YBMY6D3TYYJSVJVCKUM22Q6TMKCCHVAHY4X7K6QELQACZRM`](https://stellar.expert/explorer/testnet/contract/CCHQ5G4Y4YBMY6D3TYYJSVJVCKUM22Q6TMKCCHVAHY4X7K6QELQACZRM)
 
 Step 1 adds one temporary read-only method without changing the contract
 address, mandate storage, payment behavior, administrator, or one-hour delay:
@@ -259,24 +257,31 @@ pub fn upgrade_test_version(_env: Env) -> u32 {
 }
 ```
 
+The live `upgrade_test_version()` invocation returns `1`.
+
 | State | Release | WASM hash | Marker | Contract id |
 |---|---|---|---|---|
 | Baseline | [`simple-v0.2.1`](https://github.com/reapp-protocol/reapp-protocol-contracts/releases/tag/simple-v0.2.1_contracts_simple_mandate_registry_mandate-registry_pkg0.2.1_cli25.1.0) | `ba370a80369daa0a0dea2554410dca6f2a9f7a76ba707cb92a83434e2fe76e87` | absent | `CCHQ5G4Y4YBMY6D3TYYJSVJVCKUM22Q6TMKCCHVAHY4X7K6QELQACZRM` |
-| Step 1 | [`simple-v0.2.2`](https://github.com/reapp-protocol/reapp-protocol-contracts/releases/tag/simple-v0.2.2_contracts_simple_mandate_registry_mandate-registry_pkg0.2.2_cli25.1.0) | `627a4db17dff863a1520eda9774b11a3c10a101554ef7dcaf406de8a53906760` | `upgrade_test_version() -> 1` | `CCHQ5G4Y4YBMY6D3TYYJSVJVCKUM22Q6TMKCCHVAHY4X7K6QELQACZRM` |
+| Step 1 verified live | [`simple-v0.2.2`](https://github.com/reapp-protocol/reapp-protocol-contracts/releases/tag/simple-v0.2.2_contracts_simple_mandate_registry_mandate-registry_pkg0.2.2_cli25.1.0) | `627a4db17dff863a1520eda9774b11a3c10a101554ef7dcaf406de8a53906760` | `upgrade_test_version() -> 1` | `CCHQ5G4Y4YBMY6D3TYYJSVJVCKUM22Q6TMKCCHVAHY4X7K6QELQACZRM` |
 
-Current Step 1 status: **scheduled and awaiting the enforced one-hour
-timelock**.
+### Live execution evidence
 
-- Schedule transaction: [`a979c6c01845d52c835b4ad902f8ec6c1be1002d281491ffa7c21e46167fa1f2`](https://stellar.expert/explorer/testnet/tx/a979c6c01845d52c835b4ad902f8ec6c1be1002d281491ffa7c21e46167fa1f2)
-- Earliest execution: `2026-07-20 10:47:21 UTC`
-- Early execution simulation: rejected with `UpgradeNotReady = 12`
-- Fixed delay before and after the upgrade: `3,600` seconds
+- Source commit: [`cecef5c5ffafd367cb97cccb4ddf84dd5b5191e3`](https://github.com/reapp-protocol/reapp-protocol-contracts/commit/cecef5c5ffafd367cb97cccb4ddf84dd5b5191e3)
+- Schedule transaction: [`a979c6c01845d52c835b4ad902f8ec6c1be1002d281491ffa7c21e46167fa1f2`](https://stellar.expert/explorer/testnet/tx/a979c6c01845d52c835b4ad902f8ec6c1be1002d281491ffa7c21e46167fa1f2), with `execute_after = 1784544441`
+- Early execute simulation: rejected with `Error(Contract,#12)`
+- Pause transaction: [`0f819c419b2591e3baeaefdf3917458e12a3a5c889416d66fca41e9acf1d65a1`](https://stellar.expert/explorer/testnet/tx/0f819c419b2591e3baeaefdf3917458e12a3a5c889416d66fca41e9acf1d65a1)
+- Execute transaction: [`ed626ad3db48fbbd1a87e7488d883915ecda0662b04ad11f1dfb1dfd0f6d024f`](https://stellar.expert/explorer/testnet/tx/ed626ad3db48fbbd1a87e7488d883915ecda0662b04ad11f1dfb1dfd0f6d024f)
+- Unpause transaction: [`1d94a04c37402da5ca766872b373374948b5ecb5b5e97ac9b21e0ad93baf9aa2`](https://stellar.expert/explorer/testnet/tx/1d94a04c37402da5ca766872b373374948b5ecb5b5e97ac9b21e0ad93baf9aa2)
+- Fixed upgrade delay before and after execution: `3,600` seconds
 
-After execution, this section will record the execute transaction, the live
-v0.2.2 hash, `upgrade_test_version() == 1`, the unchanged address and admin,
-and StellarExpert source verification. Step 2 will then remove the temporary
-method through the same one-hour process while retaining the `3,600`-second
-delay.
+Final live checks confirmed the same contract id, exact v0.2.2 WASM hash,
+unchanged admin `GA2B3YY27OY6AWT2VXMXUDBSAHVOLU2ST6QWJJJLOIGDQHJDXO4RL4XH`,
+`get_pending_upgrade = null`, `get_upgrade_delay = 3600`,
+`upgrade_test_version() = 1`, and `is_paused = false`. StellarExpert reports
+[source verified and Versions 2](https://stellar.expert/explorer/testnet/contract/CCHQ5G4Y4YBMY6D3TYYJSVJVCKUM22Q6TMKCCHVAHY4X7K6QELQACZRM).
+
+Step 2 cleanup/revert is prepared but **not scheduled**, pending review. npm
+was untouched.
 
 ## Previous Published v0.2.0 Deployment
 
