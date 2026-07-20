@@ -161,12 +161,6 @@ fn constructor_sets_admin_and_unpaused_state() {
 }
 
 #[test]
-fn temporary_upgrade_marker_reports_version_one() {
-    let w = setup();
-    assert_eq!(w.client().upgrade_test_version(), 1);
-}
-
-#[test]
 fn admin_can_pause_and_unpause_idempotently() {
     let w = setup();
     let c = w.client();
