@@ -95,6 +95,12 @@ impl MandateRegistry {
         UPGRADE_DELAY_SECONDS
     }
 
+    /// Temporary read-only marker for the same-address upgrade validation.
+    /// The cleanup release removes this method after the test is complete.
+    pub fn upgrade_test_version(_env: Env) -> u32 {
+        1
+    }
+
     /// Store a user-signed mandate from its authorized parameters. The contract
     /// sets `spent=0, seq=0, status=Active` itself. Authorized by `user`.
     /// Returns the mandate id (= `vc_hash`, the storage key).
