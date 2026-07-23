@@ -2,3 +2,6 @@
 .DS_Store
 release-artifact/
 package-lock.json
+
+# Local agent/editor settings
+.claude/

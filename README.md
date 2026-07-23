@@ -1,6 +1,6 @@
-# ⚡ reapp-protocol-contracts
+# reapp-protocol-contracts
 
-**The on-chain enforcement layer for REAPP — published so anyone can prove the bytecode on Stellar matches this source. No trust. Just hashes.**
+**The on-chain enforcement layer for REAPP — published so anyone can prove the bytecode on Stellar matches this source.**
 
 [![Stellar](https://img.shields.io/badge/Stellar-Testnet-7B73FF?logo=stellar&logoColor=white)](https://stellar.expert/explorer/testnet)
 [![Soroban](https://img.shields.io/badge/Soroban-Smart%20Contracts-0F0F23)](https://soroban.stellar.org)
@@ -10,7 +10,7 @@
 
 ---
 
-## 🔗 Trust Chain — Source to Chain, Cryptographically Welded
+## Trust chain: source to chain
 
 Every deployed byte traces back to a tagged commit in this repo. The pipeline is reproducible, attested, and verifiable by anyone with a terminal:
 
@@ -33,18 +33,18 @@ flowchart LR
 
 ---
 
-## 📁 Contract Arsenal
+## Contracts
 
 | Folder | Current testnet contract | Historical testnet contract |
 |---|---|---|
-| [`contracts/simple`](contracts/simple) | [`CCHQ5G4Y…CZRM`](https://stellar.expert/explorer/testnet/contract/CCHQ5G4Y4YBMY6D3TYYJSVJVCKUM22Q6TMKCCHVAHY4X7K6QELQACZRM) — release `0.2.1` | [`CB4KOTLG…7ZOA`](https://stellar.expert/explorer/testnet/contract/CB4KOTLGMM5JEPFPU6QBJLADIBP3RSGUX44FOYTFRICNXKKFPYIW7ZOA) — immutable `v0.1.0` |
+| [`contracts/simple`](contracts/simple) | [`CCHQ5G4Y…CZRM`](https://stellar.expert/explorer/testnet/contract/CCHQ5G4Y4YBMY6D3TYYJSVJVCKUM22Q6TMKCCHVAHY4X7K6QELQACZRM) — release `0.2.3` | [`CB4KOTLG…7ZOA`](https://stellar.expert/explorer/testnet/contract/CB4KOTLGMM5JEPFPU6QBJLADIBP3RSGUX44FOYTFRICNXKKFPYIW7ZOA) — immutable `v0.1.0` |
 | [`contracts/composites`](contracts/composites) | [`CCYRF7FK…HEYW`](https://stellar.expert/explorer/testnet/contract/CCYRF7FKYGSNWX5I7WLYXZ6LNUNVCSPE4BOTQFVWVTABOHAP52DYHEYW) — release `0.3.0` | [`CBALARHT…WOQX`](https://stellar.expert/explorer/testnet/contract/CBALARHTO5D7JLWHZ5KST4QNIRC64JI5H3DQDHMIUBSRLLOVS6FCWOQX) — immutable `v0.2.0` |
 
 Both contracts keep the crate name `mandate-registry`, but their package versions and release tags are distinct. The historical deployments remain available as **immutable source anchors**; the current deployments add **pause**, **authority rotation**, and **timelocked same-address upgrades**.
 
 ---
 
-## 🛡️ Shared Upgrade Controls
+## Shared upgrade controls
 
 Both current contracts bolt on the same operational surface — **without touching existing mandate or pool encodings**.
 
@@ -139,7 +139,7 @@ flowchart TB
 
 ---
 
-## 🧪 Build and Test Locally
+## Build and test locally
 
 Run the same gate check used by CI and tagged releases:
 
@@ -186,7 +186,7 @@ pending-upgrade, and mandate storage behavior across the swap.
 
 ---
 
-## 🧾 Current Release Evidence
+## Current release evidence
 
 Both current deployments use the **exact tagged and attested WASM** produced by
 the [StellarExpert soroban-build-workflow](https://github.com/stellar-expert/soroban-build-workflow).
@@ -208,24 +208,12 @@ same-address upgrade flow; the Composite release comes from commit
 | Simple `v0.1.0` | `4eb1b9430bd4a978348e7efc283a0bf599df048216a43b582921c17daed8c69e` |
 | Composite `v0.2.0` | `6333c20b490a570ed7b1c8cbfbf382da00ee8a0d1e4ef1ba013d02fa1cf16f44` |
 
-Every future release repeats the ritual: **tagged build → hash + interface inspection → attestation → deployment → live checks → recorded evidence.**
-
-```mermaid
-timeline
-    title Release Discipline — Every Version, Same Ritual
-    Tagged build : Reproducible workflow : Pinned commit
-    Verify : SHA-256 hash : Interface inspection
-    Attest : GitHub provenance : Public record
-    Deploy : Testnet : On-chain hash match
-    Prove : Live checks : Evidence recorded in README
-```
+Every future release follows the same pipeline: tagged build → hash + interface inspection → attestation → deployment → live checks → recorded evidence.
 
 ---
 
-## 🌐 Protocol, SDK, and Proof
+## Protocol, SDK, and proof
 
 This repo is **just the enforcement contract**. The full protocol, SDK, x402 round-trip, reference apps, security gate checks, and clause-by-clause on-chain proof live in:
 
-👉 **[`reapp-protocol/reapp-protocol`](https://github.com/reapp-protocol/reapp-protocol)**
-
-*Verify everything. Trust nothing.*
+**[`reapp-protocol/reapp-protocol`](https://github.com/reapp-protocol/reapp-protocol)**

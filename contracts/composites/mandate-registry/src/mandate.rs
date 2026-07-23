@@ -47,7 +47,7 @@ pub struct Mandate {
     pub user: Address,
     /// The ONLY principal permitted to call `execute_payment`.
     pub agent: Address,
-    /// MVP: single allowed payee (scope). T1: `Vec<Address>` or scope-hash.
+    /// MVP: single allowed payee (scope). Future: `Vec<Address>` or scope-hash.
     pub merchant: Address,
     /// SEP-41 / SAC contract id (USDC on testnet).
     pub asset: Address,

@@ -1,7 +1,7 @@
 # Simple MandateRegistry
 
 `contracts/simple/mandate-registry` is REAPP's minimal mandate contract and the
-reference contract for the public SDK. Release `0.2.0` keeps the original
+reference contract for the public SDK. Release `0.2.3` keeps the original
 mandate interface intact and adds an admin-authorized emergency stop, authority
 rotation, and same-address WASM upgrades.
 
