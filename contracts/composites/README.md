@@ -1,21 +1,57 @@
 # Composite MandateRegistry
 
 `contracts/composites/mandate-registry` is REAPP's composite mandate contract
-with deterministic clearing pools. Release `0.3.0` keeps the full `0.2.0`
-mandate and pool interface intact and adds admin-authorized emergency controls,
-authority rotation, and same-address WASM upgrades.
+with deterministic clearing pools. Source version `0.4.0` adds the opt-in AP2
+pool interface while preserving every `0.3.0` entry point and stored
+`Mandate`/`ClearingPool` encoding. The current testnet deployment remains
+release `0.3.0` until a tagged, gate-checked upgrade is published.
 
 It extends the simple mandate path with deterministic group clearing: money
-moves only through `execute_payment` for standalone mandates or `clear_pool` for
-composite capture. Each path validates and consumes atomically before
-transferring. The SDK is untrusted; this contract is the source of truth.
+moves only through `execute_payment` for standalone mandates or the shared
+`clear_pool` / `clear_pool_ap2` implementation for composite capture. Each path
+validates and consumes atomically before transferring. The SDK is untrusted;
+this contract is the source of truth.
 
-Built with `soroban-sdk` v22 for the `wasm32v1-none` target. The historical
-`v0.2.0` source-verified deployment remains unchanged and is documented below.
+Built with `soroban-sdk` v22 for the `wasm32v1-none` target. Historical
+source-verified deployments remain unchanged and are documented below.
 
 Everything below is code-backed: public methods come from `src/lib.rs`, the
 money paths come from `src/payment.rs` and `src/pool.rs`, and the allocation
 algorithm comes from `src/clearing.rs`.
+
+## AP2 v0.2 option
+
+New applications can choose an AP2-aware pool at registration with
+`register_pool_ap2`. This source implementation adds sidecar policy rather than
+changing the existing `Mandate` or `ClearingPool` encoding:
+
+- every child commits through `commit_child_ap2` with a verifier-signed REAPP
+  pool-participation authorization;
+- the authorization names the exact network, registry, pool, mandate,
+  shopping agent, merchant, asset, budget, schedule hash, evidence, and
+  validity window;
+- every AP2 child stores the extension as its on-chain `agent`, so a released
+  child cannot bypass the extension through direct solo execution;
+- `clear_pool_ap2` computes the unchanged canonical outcome, persists its
+  reentrancy guard, consumes each winning participation in the extension, and
+  then performs the existing transfers; and
+- `commit_child` and `clear_pool` reject AP2-aware pools, while the AP2 entry
+  points reject legacy pools.
+
+Pools declare one authorization mode. Legacy and AP2 children do not mix
+inside the same pool, which keeps missing-proof behavior deterministic.
+Applications may offer legacy pools, AP2-aware pools, and Simple payments side
+by side, and one extension deployment may serve multiple registries because
+every authorization names its registry and capture kind.
+
+AP2 v0.2 does not standardize REAPP demand curves or multi-user deadline
+clearing. This path is therefore described as **AP2 v0.2 with the REAPP pooled
+extension**, not as generic AP2 Payment Mandate interchange.
+
+The current testnet `0.3.0` deployment does not yet contain these entry points.
+A user-facing release still needs a tagged Composite upgrade, a deployed and
+configured extension, published contract IDs and WASM hashes, and live gate
+check evidence.
 
 ## Architecture
 

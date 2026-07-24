@@ -39,8 +39,20 @@ flowchart LR
 |---|---|---|
 | [`contracts/simple`](contracts/simple) | [`CCHQ5G4Y…CZRM`](https://stellar.expert/explorer/testnet/contract/CCHQ5G4Y4YBMY6D3TYYJSVJVCKUM22Q6TMKCCHVAHY4X7K6QELQACZRM) — release `0.2.3` | [`CB4KOTLG…7ZOA`](https://stellar.expert/explorer/testnet/contract/CB4KOTLGMM5JEPFPU6QBJLADIBP3RSGUX44FOYTFRICNXKKFPYIW7ZOA) — immutable `v0.1.0` |
 | [`contracts/composites`](contracts/composites) | [`CCYRF7FK…HEYW`](https://stellar.expert/explorer/testnet/contract/CCYRF7FKYGSNWX5I7WLYXZ6LNUNVCSPE4BOTQFVWVTABOHAP52DYHEYW) — release `0.3.0` | [`CBALARHT…WOQX`](https://stellar.expert/explorer/testnet/contract/CBALARHTO5D7JLWHZ5KST4QNIRC64JI5H3DQDHMIUBSRLLOVS6FCWOQX) — immutable `v0.2.0` |
+| [`contracts/ap2-authorization`](contracts/ap2-authorization) | Source and integration tests only; not deployed | — |
 
 Both contracts keep the crate name `mandate-registry`, but their package versions and release tags are distinct. The historical deployments remain available as **immutable source anchors**; the current deployments add **pause**, **authority rotation**, and **timelocked same-address upgrades**.
+
+If you are moving from the AP2 v0.1 SDK bridge to v0.2, existing on-chain
+mandates remain usable: Simple's method and stored mandate shape did not
+change. New open/closed-chain routes can use the separate AP2 authorization
+extension while the user's allowance remains on Simple or Composite.
+
+The source now includes an AP2-aware Composite pool mode. It is opt-in and
+cannot be mixed with legacy children inside one pool; applications can still
+offer Simple, legacy Composite, and AP2-aware Composite side by side. These
+additions are not part of the testnet deployments listed above until a tagged
+extension deployment and Composite upgrade are published.
 
 ---
 

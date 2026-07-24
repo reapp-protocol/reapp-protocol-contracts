@@ -3,14 +3,22 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
-for variant in simple composites; do
-  contract="$ROOT/contracts/$variant/mandate-registry"
-  echo "==> $variant: format"
+gate_contract() {
+  local label="$1"
+  local contract="$2"
+
+  echo "==> $label: format"
   cargo fmt --manifest-path "$contract/Cargo.toml" --all -- --check
-  echo "==> $variant: lint"
+  echo "==> $label: lint"
   cargo clippy --manifest-path "$contract/Cargo.toml" --all-targets -- -D warnings
-  echo "==> $variant: tests"
+  echo "==> $label: tests"
   cargo test --manifest-path "$contract/Cargo.toml"
-  echo "==> $variant: release WASM"
+  echo "==> $label: release WASM"
   cargo build --manifest-path "$contract/Cargo.toml" --target wasm32v1-none --release
-done
+}
+
+gate_contract "simple" "$ROOT/contracts/simple/mandate-registry"
+gate_contract "composites" "$ROOT/contracts/composites/mandate-registry"
+gate_contract \
+  "AP2 authorization extension" \
+  "$ROOT/contracts/ap2-authorization/mandate-extension"

@@ -4,6 +4,7 @@
 use soroban_sdk::{contracttype, Address, BytesN, Env, Vec};
 
 use crate::admin::PendingUpgrade;
+use crate::ap2::{Ap2MandatePolicy, Ap2PoolPolicy};
 use crate::error::Error;
 use crate::mandate::Mandate;
 use crate::pooltypes::ClearingPool;
@@ -22,6 +23,8 @@ pub enum DataKey {
     Mandate(BytesN<32>),
     Pool(BytesN<32>),
     PoolMembers(BytesN<32>),
+    Ap2Pool(BytesN<32>),
+    Ap2Mandate(BytesN<32>),
 }
 
 pub fn set_admin(env: &Env, admin: &Address) {
@@ -115,6 +118,34 @@ pub fn set_pool_members(env: &Env, id: &BytesN<32>, members: &Vec<BytesN<32>>) {
         .extend_ttl(&key, TTL_THRESHOLD, TTL_EXTEND);
 }
 
+pub fn set_ap2_pool_policy(env: &Env, id: &BytesN<32>, policy: &Ap2PoolPolicy) {
+    let key = DataKey::Ap2Pool(id.clone());
+    env.storage().persistent().set(&key, policy);
+    env.storage()
+        .persistent()
+        .extend_ttl(&key, TTL_THRESHOLD, TTL_EXTEND);
+}
+
+pub fn get_ap2_pool_policy(env: &Env, id: &BytesN<32>) -> Option<Ap2PoolPolicy> {
+    env.storage()
+        .persistent()
+        .get(&DataKey::Ap2Pool(id.clone()))
+}
+
+pub fn set_ap2_mandate_policy(env: &Env, id: &BytesN<32>, policy: &Ap2MandatePolicy) {
+    let key = DataKey::Ap2Mandate(id.clone());
+    env.storage().persistent().set(&key, policy);
+    env.storage()
+        .persistent()
+        .extend_ttl(&key, TTL_THRESHOLD, TTL_EXTEND);
+}
+
+pub fn get_ap2_mandate_policy(env: &Env, id: &BytesN<32>) -> Option<Ap2MandatePolicy> {
+    env.storage()
+        .persistent()
+        .get(&DataKey::Ap2Mandate(id.clone()))
+}
+
 /// Bump an entry's TTL to cover at least `horizon_secs` from now (5s/ledger
 /// estimate, 2x margin), never below the standard extension. `extend_ttl`
 /// only ever extends, so a longer-lived entry is untouched. Every pool
@@ -129,8 +160,14 @@ fn extend_to_horizon(env: &Env, key: &DataKey, horizon_secs: u64) {
 pub fn bump_pool_horizon(env: &Env, pool_id: &BytesN<32>, horizon_secs: u64) {
     extend_to_horizon(env, &DataKey::Pool(pool_id.clone()), horizon_secs);
     extend_to_horizon(env, &DataKey::PoolMembers(pool_id.clone()), horizon_secs);
+    if get_ap2_pool_policy(env, pool_id).is_some() {
+        extend_to_horizon(env, &DataKey::Ap2Pool(pool_id.clone()), horizon_secs);
+    }
 }
 
 pub fn bump_mandate_horizon(env: &Env, id: &BytesN<32>, horizon_secs: u64) {
     extend_to_horizon(env, &DataKey::Mandate(id.clone()), horizon_secs);
+    if get_ap2_mandate_policy(env, id).is_some() {
+        extend_to_horizon(env, &DataKey::Ap2Mandate(id.clone()), horizon_secs);
+    }
 }

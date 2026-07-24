@@ -10,6 +10,44 @@ stores it, and funds can move only through `execute_payment`, which validates
 and consumes the mandate atomically before transferring. The SDK is untrusted;
 this contract is the source of truth.
 
+## AP2 v0.1 backwards compatibility
+
+If you already registered a mandate through the AP2 v0.1 bridge, it continues
+to work. The v0.2 SDK bridge uses the same on-chain method and stored mandate
+shape, so upgrading the SDK does not invalidate an existing mandate or require
+you to move its allowance.
+
+The contract itself does not parse AP2 credentials or claim support for every
+AP2 v0.2 feature. It receives a small authorization projection from the SDK:
+
+| Authorization presented by the bridge | Existing Simple field or behavior |
+|---|---|
+| User authorization | `user.require_auth()` at registration and revocation |
+| Agent `cnf` key | `agent` and `require_auth(agent)` on every payment |
+| One allowed payee | `merchant` scope |
+| Matching amount range and cumulative budget | `max_amount` and cumulative `spent` |
+| `exp` / execution `not_after` | `expiry` |
+| Stellar payment asset | `asset` |
+| Hash of the normalized AP2 evidence | opaque 32-byte `vc_hash` |
+| On-demand repeated payments | monotonic `seq` plus cumulative budget |
+
+For new v0.2 admissions, the SDK also compares the AP2 `payment.reference` with
+the checkout context supplied by the application. Its value is committed by
+`vc_hash`, but the contract cannot independently determine whether an external
+checkout matches it. Checkout-reference, SD-JWT-chain, selective-disclosure,
+and receipt verification therefore remain off-chain responsibilities.
+
+For the current narrow bridge, we have not identified a need to change the
+Simple ABI, stored types, errors, events, or deployed WASM. Payments continue
+through the existing `execute_payment` boundary.
+
+For an open/closed-chain merchant route, a separately deployed AP2
+authorization extension can be stored as a new mandate's `agent`. The actual
+shopping agent authenticates to the extension, and the extension invokes this
+unchanged `execute_payment` method after consuming a typed verifier
+authorization. The user's token allowance still names Simple. This optional
+extension is source-tested but not part of the current testnet deployment.
+
 Built with `soroban-sdk` v22 for the `wasm32v1-none` target. The historical
 `v0.1.0` source-verified deployment remains unchanged and is documented below.
 
@@ -63,7 +101,7 @@ only after the mandate has been re-validated and consumed.
 
 ```mermaid
 flowchart LR
-    Intent["Signed intent\nuser, agent, merchant, asset,\nbudget, expiry, vc_hash"]
+    Intent["Signed AP2 mandate projection\nuser, agent, merchant, asset,\nbudget, expiry, vc_hash"]
     Register["register_mandate\nuser auth required"]
     State["On-chain mandate state\nspent, seq, status"]
     Read["validate_mandate / get_mandate\nread-only inspection"]

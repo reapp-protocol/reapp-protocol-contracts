@@ -50,4 +50,9 @@ pub enum Error {
     UpgradeNotReady = 33,
     UpgradeAlreadyScheduled = 34,
     UpgradeRequiresPause = 35,
+    Ap2Required = 36,
+    Ap2NotEnabled = 37,
+    Ap2AuthorizationMismatch = 38,
+    Ap2AlreadyBound = 39,
+    Ap2AuthorizationTooShort = 40,
 }

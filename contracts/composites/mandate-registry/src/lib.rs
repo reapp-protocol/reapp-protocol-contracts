@@ -6,10 +6,10 @@
 //! MandateRegistry — REAPP's on-chain enforcement layer.
 //!
 //! The contract is the entire protocol and is small by design: a small
-//! interface is easy to review. Money moves only through `execute_payment` (solo)
-//! and `clear_pool` (composite capture), each of which validates-and-consumes
-//! atomically before transferring. The SDK is untrusted; this contract is the
-//! source of truth.
+//! interface is easy to review. Money moves only through `execute_payment`
+//! (solo) and the shared `clear_pool` / `clear_pool_ap2` capture implementation,
+//! each of which validates-and-consumes atomically before transferring. The SDK
+//! is untrusted; this contract is the source of truth.
 //!
 //! Module responsibilities (dependencies flow ONE way, no cycles):
 //!
@@ -24,7 +24,7 @@
 //!  - `registry`  — register / revoke (allowance funding model).
 //!  - `payment`   — validate_mandate + execute_payment + the token transfer.
 //!  - `clearing`  — the pure clearing function (the composite trust core).
-//!  - `pool`      — pool lifecycle: register / commit / evict / clear / simulate.
+//!  - `pool`      — legacy/AP2 pool lifecycle: register / commit / evict / clear / simulate.
 //!  - `error`     — typed errors.
 //!  - `events`    — emitted events.
 
@@ -32,6 +32,7 @@
 extern crate std;
 
 mod admin;
+mod ap2;
 mod clearing;
 mod error;
 mod events;
@@ -43,6 +44,7 @@ mod registry;
 mod storage;
 
 pub use admin::{PendingUpgrade, UPGRADE_DELAY_SECONDS};
+pub use ap2::{Ap2MandatePolicy, Ap2PoolPolicy, PoolCapture, PoolParticipationAuthorization};
 pub use error::Error;
 pub use mandate::{Mandate, PoolState, SchedulePoint, Status};
 pub use pooltypes::{Allocation, ChildView, ClearOutcome, ClearingKind, ClearingPool, PoolStatus};
@@ -219,10 +221,52 @@ impl MandateRegistry {
         )
     }
 
+    /// Register a pool whose members carry AP2 verifier evidence. All members
+    /// use one extension address, `commit_child_ap2`, and `clear_pool_ap2`.
+    #[allow(clippy::too_many_arguments)]
+    pub fn register_pool_ap2(
+        env: Env,
+        originator: Address,
+        merchant: Address,
+        asset: Address,
+        kind: ClearingKind,
+        threshold_qty: u128,
+        threshold_value: u128,
+        min_child_value: u128,
+        clearing_deadline: u64,
+        nonce: BytesN<32>,
+        extension: Address,
+    ) -> Result<BytesN<32>, Error> {
+        pool::register_pool_ap2(
+            &env,
+            originator,
+            merchant,
+            asset,
+            kind,
+            threshold_qty,
+            threshold_value,
+            min_child_value,
+            clearing_deadline,
+            nonce,
+            extension,
+        )
+    }
+
     /// Link a pooled mandate into its pool as a Committed member.
     /// Permissionless (objective checks only); revocable until the deadline.
     pub fn commit_child(env: Env, mandate_id: BytesN<32>) -> Result<(), Error> {
         pool::commit_child(&env, mandate_id)
+    }
+
+    /// Link a child to an AP2-aware pool using a verifier-signed participation
+    /// authorization that covers the pool's full capture window.
+    pub fn commit_child_ap2(
+        env: Env,
+        mandate_id: BytesN<32>,
+        authorization: PoolParticipationAuthorization,
+        signature: soroban_sdk::BytesN<64>,
+    ) -> Result<(), Error> {
+        pool::commit_child_ap2(&env, mandate_id, authorization, signature)
     }
 
     /// Remove an objectively-ineligible member and free its slot.
@@ -237,6 +281,12 @@ impl MandateRegistry {
     /// the deadline.
     pub fn clear_pool(env: Env, pool_id: BytesN<32>) -> Result<(), Error> {
         pool::clear_pool(&env, pool_id)
+    }
+
+    /// Close an AP2-aware pool. The extension consumes each winner's exact
+    /// canonical leg before the existing token transfers execute.
+    pub fn clear_pool_ap2(env: Env, pool_id: BytesN<32>) -> Result<(), Error> {
+        pool::clear_pool_ap2(&env, pool_id)
     }
 
     /// Read-only: the exact outcome `clear_pool` would execute against current
@@ -256,6 +306,25 @@ impl MandateRegistry {
     pub fn get_pool_members(env: Env, pool_id: BytesN<32>) -> Result<Vec<BytesN<32>>, Error> {
         pool::get_pool_members(&env, pool_id)
     }
+
+    /// AP2 mode and extension selected for a pool.
+    pub fn get_ap2_pool_policy(env: Env, pool_id: BytesN<32>) -> Result<Ap2PoolPolicy, Error> {
+        pool::get_ap2_pool_policy(&env, pool_id)
+    }
+
+    /// AP2 participation id bound to a committed child.
+    pub fn get_ap2_mandate_policy(
+        env: Env,
+        mandate_id: BytesN<32>,
+    ) -> Result<Ap2MandatePolicy, Error> {
+        pool::get_ap2_mandate_policy(&env, mandate_id)
+    }
+
+    /// Domain-separated hash of an exact price schedule, for authoring AP2
+    /// participation payloads without duplicating contract serialization.
+    pub fn ap2_schedule_hash(env: Env, schedule: Vec<SchedulePoint>) -> BytesN<32> {
+        pool::schedule_hash(&env, &schedule)
+    }
 }
 
 #[cfg(test)]
@@ -263,6 +332,9 @@ mod test;
 
 #[cfg(test)]
 mod pool_test;
+
+#[cfg(test)]
+mod ap2_pool_test;
 
 #[cfg(test)]
 mod reentry_probe;

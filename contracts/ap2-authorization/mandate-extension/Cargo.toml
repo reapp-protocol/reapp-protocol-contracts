@@ -1,6 +1,6 @@
 [package]
-name = "mandate-registry"
-version = "0.4.0"
+name = "ap2-authorization-extension"
+version = "0.1.0"
 edition = "2021"
 publish = false
 
@@ -12,8 +12,8 @@ doctest = false
 soroban-sdk = "22"
 
 [dev-dependencies]
-ap2-authorization-extension = { path = "../../ap2-authorization/mandate-extension" }
 ed25519-dalek = "=2.2.0"
+simple-mandate-registry = { package = "mandate-registry", path = "../../simple/mandate-registry" }
 soroban-sdk = { version = "22", features = ["testutils"] }
 
 [profile.release]

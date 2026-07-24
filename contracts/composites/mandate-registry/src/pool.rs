@@ -5,17 +5,19 @@
 //! equality). Depends on `storage`, `clearing`, `events`, types — never on
 //! `registry`/`payment`.
 //!
-//! Authorization model: `register_pool` is originator-signed and is the last
-//! signature the pool path ever requires from anyone but the users. Commit,
-//! evict, clear and simulate are permissionless: every check is objective
-//! on-chain state, the users authorized terms + schedule + allowance at
-//! registration, and a commit stays revocable until the deadline. Requiring
-//! per-capture signatures would hand every member a free last-second veto.
+//! Authorization model: legacy pools preserve the original permissionless
+//! commit/clear flow. AP2-aware pools add one verifier-signed participation
+//! authorization at commit time; capture remains permissionless and
+//! deterministic, so no member gets a last-second veto.
 
 use soroban_sdk::token::TokenClient;
 use soroban_sdk::xdr::ToXdr;
 use soroban_sdk::{Address, Bytes, BytesN, Env, IntoVal, Symbol, Vec};
 
+use crate::ap2::{
+    Ap2AuthorizationExtensionClient, Ap2MandatePolicy, Ap2PoolPolicy, PoolCapture,
+    PoolParticipationAuthorization,
+};
 use crate::error::Error;
 use crate::mandate::{worst_case, Mandate, PoolState, Status};
 use crate::pooltypes::{
@@ -25,6 +27,8 @@ use crate::pooltypes::{
 use crate::{admin, clearing, events, storage};
 
 use crate::mandate::{MAX_QTY, MAX_UNIT_PRICE};
+
+const AP2_SCHEDULE_DOMAIN: &[u8] = b"REAPP\0AP2\0SCHEDULE\0V1\0";
 
 /// Largest value any pool can clear at: 8 members, each at the schedule caps.
 /// A threshold above this can never fire, so registration rejects it (and the
@@ -125,6 +129,40 @@ pub fn register_pool(
     Ok(pool_id)
 }
 
+/// Register an AP2-aware pool. Its members must use `commit_child_ap2`, and it
+/// must be closed through `clear_pool_ap2`; the legacy entry points reject it.
+/// Keeping the mode uniform per pool makes a missing participation proof
+/// impossible to hide among legacy children.
+#[allow(clippy::too_many_arguments)]
+pub fn register_pool_ap2(
+    env: &Env,
+    originator: Address,
+    merchant: Address,
+    asset: Address,
+    kind: ClearingKind,
+    threshold_qty: u128,
+    threshold_value: u128,
+    min_child_value: u128,
+    clearing_deadline: u64,
+    nonce: BytesN<32>,
+    extension: Address,
+) -> Result<BytesN<32>, Error> {
+    let pool_id = register_pool(
+        env,
+        originator,
+        merchant,
+        asset,
+        kind,
+        threshold_qty,
+        threshold_value,
+        min_child_value,
+        clearing_deadline,
+        nonce,
+    )?;
+    storage::set_ap2_pool_policy(env, &pool_id, &Ap2PoolPolicy { extension });
+    Ok(pool_id)
+}
+
 /// Link a registered pooled mandate into its pool as a Committed member.
 /// Permissionless: every check below is objective on-chain state, and the
 /// commit stays revocable (via `revoke_mandate`) until the deadline. The fund
@@ -132,6 +170,73 @@ pub fn register_pool(
 /// fungible and the user can move it; correctness comes entirely from the
 /// capture-time eligibility filter.
 pub fn commit_child(env: &Env, mandate_id: BytesN<32>) -> Result<(), Error> {
+    let mandate = storage::get_mandate(env, mandate_id.clone())?;
+    let pool_id = mandate.pool_id.clone().ok_or(Error::NotPooled)?;
+    if storage::get_ap2_pool_policy(env, &pool_id).is_some() {
+        return Err(Error::Ap2Required);
+    }
+    commit_child_inner(env, mandate_id)
+}
+
+/// Commit a child to an AP2-aware pool after binding the exact pool, mandate,
+/// merchant, asset, schedule, budget and capture window to verifier evidence.
+/// Composite commits its state before the extension call, making reentry see a
+/// non-Unlinked child; a failed extension call rolls the transaction back.
+pub fn commit_child_ap2(
+    env: &Env,
+    mandate_id: BytesN<32>,
+    authorization: PoolParticipationAuthorization,
+    signature: BytesN<64>,
+) -> Result<(), Error> {
+    let mandate = storage::get_mandate(env, mandate_id.clone())?;
+    let pool_id = mandate.pool_id.clone().ok_or(Error::NotPooled)?;
+    let pool = storage::get_pool(env, pool_id.clone())?;
+    let pool_policy = storage::get_ap2_pool_policy(env, &pool_id).ok_or(Error::Ap2NotEnabled)?;
+    if storage::get_ap2_mandate_policy(env, &mandate_id).is_some() {
+        return Err(Error::Ap2AlreadyBound);
+    }
+
+    let capture_end = pool
+        .clearing_deadline
+        .checked_add(CAPTURE_WINDOW_SECS)
+        .ok_or(Error::DeadlineTooFar)?;
+    if authorization.expires_at <= capture_end {
+        return Err(Error::Ap2AuthorizationTooShort);
+    }
+    if authorization.version != 1
+        || authorization.network_id != env.ledger().network_id()
+        || authorization.registry != env.current_contract_address()
+        || authorization.pool_id != pool_id
+        || authorization.mandate_id != mandate_id
+        || mandate.agent != pool_policy.extension
+        || authorization.merchant != pool.merchant
+        || authorization.merchant != mandate.merchant
+        || authorization.asset != pool.asset
+        || authorization.asset != mandate.asset
+        || authorization.max_amount != mandate.max_amount
+        || authorization.schedule_hash != schedule_hash(env, &mandate.price_schedule)
+    {
+        return Err(Error::Ap2AuthorizationMismatch);
+    }
+
+    commit_child_inner(env, mandate_id.clone())?;
+    let participation_id = Ap2AuthorizationExtensionClient::new(env, &pool_policy.extension)
+        .register_pool_participation(&authorization, &signature);
+    storage::set_ap2_mandate_policy(
+        env,
+        &mandate_id,
+        &Ap2MandatePolicy {
+            extension: pool_policy.extension,
+            participation_id,
+        },
+    );
+    let horizon = capture_end.saturating_sub(env.ledger().timestamp());
+    storage::bump_pool_horizon(env, &pool_id, horizon);
+    storage::bump_mandate_horizon(env, &mandate_id, horizon);
+    Ok(())
+}
+
+fn commit_child_inner(env: &Env, mandate_id: BytesN<32>) -> Result<(), Error> {
     let mut mandate = storage::get_mandate(env, mandate_id.clone())?;
     let pool_id = mandate.pool_id.clone().ok_or(Error::NotPooled)?;
 
@@ -240,6 +345,28 @@ pub fn evict_child(env: &Env, pool_id: BytesN<32>, mandate_id: BytesN<32>) -> Re
 /// Past the window, or if the predicate is unmet at close: abort, releasing
 /// every committed child. Idempotent via the Open-status guard.
 pub fn clear_pool(env: &Env, pool_id: BytesN<32>) -> Result<(), Error> {
+    if storage::get_ap2_pool_policy(env, &pool_id).is_some() {
+        return Err(Error::Ap2Required);
+    }
+    clear_pool_inner(env, pool_id, None)
+}
+
+/// AP2-aware close. The canonical outcome and all registry effects are fixed
+/// before the extension is called for each winning leg. Any missing, stale or
+/// already-consumed participation proof reverts the whole pooled capture.
+pub fn clear_pool_ap2(env: &Env, pool_id: BytesN<32>) -> Result<(), Error> {
+    if !storage::has_pool(env, &pool_id) {
+        return Err(Error::PoolNotFound);
+    }
+    let policy = storage::get_ap2_pool_policy(env, &pool_id).ok_or(Error::Ap2NotEnabled)?;
+    clear_pool_inner(env, pool_id, Some(policy))
+}
+
+fn clear_pool_inner(
+    env: &Env,
+    pool_id: BytesN<32>,
+    ap2_pool_policy: Option<Ap2PoolPolicy>,
+) -> Result<(), Error> {
     let mut pool = storage::get_pool(env, pool_id.clone())?;
     if pool.status != PoolStatus::Open {
         return Err(Error::PoolNotOpen);
@@ -314,9 +441,39 @@ pub fn clear_pool(env: &Env, pool_id: BytesN<32>) -> Result<(), Error> {
         storage::set_mandate(env, &member_id, &member);
     }
 
-    // Interactions last, in allocation (mandate_id) order. fee_bps_pinned is 0
-    // for every pool this build can register, so the merchant leg is the whole
-    // leg. The stored field is retained for serialized-state compatibility.
+    let root = allocation_root(env, &pool_id, &outcome);
+
+    // Interactions last, in allocation (mandate_id) order. In AP2 mode, consume
+    // the pre-registered participation before transferring its exact canonical
+    // leg. Any extension failure rolls state and every transfer back together.
+    if let Some(pool_policy) = ap2_pool_policy {
+        let extension = Ap2AuthorizationExtensionClient::new(env, &pool_policy.extension);
+        for allocation in outcome.allocations.iter() {
+            let member = storage::get_mandate(env, allocation.mandate_id.clone())?;
+            let member_policy = storage::get_ap2_mandate_policy(env, &allocation.mandate_id)
+                .ok_or(Error::Ap2AuthorizationMismatch)?;
+            if member_policy.extension != pool_policy.extension {
+                return Err(Error::Ap2AuthorizationMismatch);
+            }
+            let leg = outcome.clearing_price * allocation.qty as i128;
+            let expected_seq = member
+                .seq
+                .checked_sub(1)
+                .ok_or(Error::Ap2AuthorizationMismatch)?;
+            extension.consume_pool(
+                &member_policy.participation_id,
+                &PoolCapture {
+                    amount: leg,
+                    expected_seq,
+                    outcome_root: root.clone(),
+                },
+            );
+        }
+    }
+
+    // fee_bps_pinned is 0 for every pool this build can register, so the
+    // merchant leg is the whole leg. The stored field is retained for
+    // serialized-state compatibility.
     let token = TokenClient::new(env, &pool.asset);
     let contract = env.current_contract_address();
     for allocation in outcome.allocations.iter() {
@@ -327,7 +484,6 @@ pub fn clear_pool(env: &Env, pool_id: BytesN<32>) -> Result<(), Error> {
     }
 
     storage::bump_pool_horizon(env, &pool_id, 0); // terminal: standard extension floor
-    let root = allocation_root(env, &pool_id, &outcome);
     events::pool_cleared(
         env,
         &pool_id,
@@ -367,6 +523,31 @@ pub fn get_pool_members(env: &Env, pool_id: BytesN<32>) -> Result<Vec<BytesN<32>
         return Err(Error::PoolNotFound);
     }
     Ok(storage::get_pool_members(env, &pool_id))
+}
+
+pub fn get_ap2_pool_policy(env: &Env, pool_id: BytesN<32>) -> Result<Ap2PoolPolicy, Error> {
+    if !storage::has_pool(env, &pool_id) {
+        return Err(Error::PoolNotFound);
+    }
+    storage::get_ap2_pool_policy(env, &pool_id).ok_or(Error::Ap2NotEnabled)
+}
+
+pub fn get_ap2_mandate_policy(
+    env: &Env,
+    mandate_id: BytesN<32>,
+) -> Result<Ap2MandatePolicy, Error> {
+    if !storage::has_mandate(env, &mandate_id) {
+        return Err(Error::NotFound);
+    }
+    storage::get_ap2_mandate_policy(env, &mandate_id).ok_or(Error::Ap2NotEnabled)
+}
+
+/// Domain-separated hash of the exact Soroban-encoded price schedule signed
+/// into an AP2 pool participation authorization.
+pub fn schedule_hash(env: &Env, schedule: &Vec<crate::mandate::SchedulePoint>) -> BytesN<32> {
+    let mut bytes = Bytes::from_slice(env, AP2_SCHEDULE_DOMAIN);
+    bytes.append(&schedule.clone().to_xdr(env));
+    env.crypto().sha256(&bytes).into()
 }
 
 /// The eligibility filter — decided once, before any price exists (worst_case,
