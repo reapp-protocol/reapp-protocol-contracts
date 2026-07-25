@@ -8,6 +8,10 @@ const DAY_IN_LEDGERS: u32 = 17_280;
 const TTL_THRESHOLD: u32 = DAY_IN_LEDGERS;
 const TTL_EXTEND: u32 = 30 * DAY_IN_LEDGERS;
 const SECS_PER_LEDGER: u64 = 5;
+/// Requested horizon for allowlist entries, re-applied on every read. `extend`
+/// doubles it, so 45 days asks for 1,555,200 ledgers — inside the 120-day
+/// network cap, and therefore never silently clamped.
+const VERIFIER_HORIZON_SECS: u64 = 45 * 86_400;
 
 #[contracttype]
 pub enum DataKey {
@@ -29,14 +33,22 @@ pub fn set_verifier(env: &Env, key: &BytesN<32>, enabled: bool) {
     env.storage()
         .persistent()
         .set(&DataKey::Verifier(key.clone()), &enabled);
-    extend(env, &DataKey::Verifier(key.clone()), u64::MAX);
+    extend(env, &DataKey::Verifier(key.clone()), VERIFIER_HORIZON_SECS);
 }
 
+/// Reading also re-extends. A verifier entry has no natural expiry, and the
+/// network caps how far any single extension can reach, so an allowlist entry
+/// kept alive by use is more honest than one asking for an unbounded TTL that
+/// the host would silently clamp.
 pub fn verifier_enabled(env: &Env, key: &BytesN<32>) -> bool {
-    env.storage()
-        .persistent()
-        .get(&DataKey::Verifier(key.clone()))
-        .unwrap_or(false)
+    let key = DataKey::Verifier(key.clone());
+    match env.storage().persistent().get(&key) {
+        Some(enabled) => {
+            extend(env, &key, VERIFIER_HORIZON_SECS);
+            enabled
+        }
+        None => false,
+    }
 }
 
 pub fn is_consumed(env: &Env, id: &BytesN<32>) -> bool {
@@ -83,6 +95,11 @@ pub fn get_participation(env: &Env, id: &BytesN<32>) -> Option<PoolParticipation
         .get(&DataKey::Participation(id.clone()))
 }
 
+/// Bump an entry to cover `horizon_secs` with a 2x margin, never below the
+/// standard floor. Callers must keep their horizons inside the network's max
+/// entry TTL: the host clamps a larger request rather than rejecting it, which
+/// would leave a replay marker expiring before the authorization it guards.
+/// `MAX_AUTHORIZATION_LIFETIME_SECS` is what keeps that true here.
 fn extend(env: &Env, key: &DataKey, horizon_secs: u64) {
     let needed = (horizon_secs / SECS_PER_LEDGER).saturating_mul(2);
     let ledgers = needed.max(TTL_EXTEND as u64).min(u32::MAX as u64) as u32;

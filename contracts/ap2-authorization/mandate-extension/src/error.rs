@@ -14,4 +14,6 @@ pub enum Error {
     ParticipationNotFound = 8,
     CaptureExceedsParticipation = 9,
     WrongCaptureKind = 10,
+    RegistryMandateMismatch = 11,
+    AuthorizationTooLong = 12,
 }

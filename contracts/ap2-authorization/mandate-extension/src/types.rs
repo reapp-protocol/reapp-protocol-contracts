@@ -4,6 +4,15 @@ use soroban_sdk::{contracttype, Address, BytesN};
 
 pub const AUTHORIZATION_VERSION: u32 = 1;
 
+/// Longest `[not_before, expires_at]` window an authorization may carry.
+///
+/// Every accepted authorization stores a replay marker whose TTL is derived
+/// from `expires_at`; the network caps how far a TTL can be extended, so an
+/// unbounded window could outlive its own marker. 45 days clears Composite's
+/// 30-day `MAX_POOL_HORIZON_SECS` with room for the participation authorization
+/// that must outlast the capture window, and stays well inside the cap.
+pub const MAX_AUTHORIZATION_LIFETIME_SECS: u64 = 45 * 86_400;
+
 #[contracttype]
 #[derive(Clone, Debug, PartialEq)]
 pub enum CaptureKind {

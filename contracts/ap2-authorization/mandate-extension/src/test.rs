@@ -9,7 +9,8 @@ use soroban_sdk::{
 
 use crate::{
     Ap2AuthorizationExtension, Ap2AuthorizationExtensionClient, CaptureAuthorization, CaptureKind,
-    Error, PoolCapture, PoolParticipationAuthorization, AUTHORIZATION_VERSION,
+    Error, MandateStatus, PoolCapture, PoolParticipationAuthorization, SimpleMandate,
+    AUTHORIZATION_VERSION, MAX_AUTHORIZATION_LIFETIME_SECS,
 };
 
 const NOW: u64 = 1_800_000_000;
@@ -22,42 +23,134 @@ enum MockError {
     ForcedFailure = 1,
 }
 
+const KEY_AGENT: u32 = 0;
+const KEY_COUNT: u32 = 1;
+const KEY_FAIL: u32 = 2;
+const KEY_MERCHANT: u32 = 3;
+const KEY_ASSET: u32 = 4;
+
+fn mock_execute(env: &Env, amount: i128) {
+    let agent: Address = env.storage().instance().get(&KEY_AGENT).unwrap();
+    agent.require_auth();
+    if env.storage().instance().get(&KEY_FAIL).unwrap_or(false) {
+        soroban_sdk::panic_with_error!(env, MockError::ForcedFailure);
+    }
+    assert!(amount > 0);
+    let count: u32 = env.storage().instance().get(&KEY_COUNT).unwrap_or(0);
+    env.storage().instance().set(&KEY_COUNT, &(count + 1));
+}
+
+fn mock_init(env: &Env, agent: &Address, merchant: &Address, asset: &Address) {
+    env.storage().instance().set(&KEY_AGENT, agent);
+    env.storage().instance().set(&KEY_COUNT, &0u32);
+    env.storage().instance().set(&KEY_FAIL, &false);
+    env.storage().instance().set(&KEY_MERCHANT, merchant);
+    env.storage().instance().set(&KEY_ASSET, asset);
+}
+
 #[contract]
 struct MockSimpleRegistry;
 
 #[contractimpl]
 impl MockSimpleRegistry {
-    pub fn __constructor(env: Env, agent: Address) {
-        env.storage().instance().set(&0u32, &agent);
-        env.storage().instance().set(&1u32, &0u32);
-        env.storage().instance().set(&2u32, &false);
+    pub fn __constructor(env: Env, agent: Address, merchant: Address, asset: Address) {
+        mock_init(&env, &agent, &merchant, &asset);
     }
 
     pub fn set_fail(env: Env, fail: bool) {
-        env.storage().instance().set(&2u32, &fail);
+        env.storage().instance().set(&KEY_FAIL, &fail);
+    }
+
+    pub fn set_merchant(env: Env, merchant: Address) {
+        env.storage().instance().set(&KEY_MERCHANT, &merchant);
+    }
+
+    pub fn set_agent(env: Env, agent: Address) {
+        env.storage().instance().set(&KEY_AGENT, &agent);
     }
 
     pub fn count(env: Env) -> u32 {
-        env.storage().instance().get(&1u32).unwrap_or(0)
+        env.storage().instance().get(&KEY_COUNT).unwrap_or(0)
+    }
+
+    pub fn get_mandate(env: Env, mandate_id: BytesN<32>) -> SimpleMandate {
+        SimpleMandate {
+            user: Address::generate(&env),
+            agent: env.storage().instance().get(&KEY_AGENT).unwrap(),
+            merchant: env.storage().instance().get(&KEY_MERCHANT).unwrap(),
+            asset: env.storage().instance().get(&KEY_ASSET).unwrap(),
+            max_amount: 1_000,
+            spent: 0,
+            expiry: NOW + 86_400,
+            seq: 0,
+            status: MandateStatus::Active,
+            vc_hash: mandate_id,
+        }
     }
 
     pub fn execute_payment(env: Env, _mandate_id: BytesN<32>, amount: i128, _expected_seq: u32) {
-        let agent: Address = env.storage().instance().get(&0u32).unwrap();
-        agent.require_auth();
-        if env.storage().instance().get(&2u32).unwrap_or(false) {
-            soroban_sdk::panic_with_error!(&env, MockError::ForcedFailure);
-        }
-        assert!(amount > 0);
-        let count: u32 = env.storage().instance().get(&1u32).unwrap_or(0);
-        env.storage().instance().set(&1u32, &(count + 1));
+        mock_execute(&env, amount);
     }
 }
+
+/// Composite encodes `Mandate` with the pool fields, so the CompositeSolo route
+/// decodes a different shape and needs its own stand-in. `#[contractimpl]`
+/// emits module-level symbols per method, so it needs its own module too.
+mod composite_mock {
+    use super::{mock_execute, mock_init, KEY_AGENT, KEY_ASSET, KEY_COUNT, KEY_MERCHANT, NOW};
+    use crate::{CompositeMandate, MandatePoolState, MandateStatus};
+    use soroban_sdk::{contract, contractimpl, testutils::Address as _, Address, BytesN, Env, Vec};
+
+    #[contract]
+    pub struct MockCompositeRegistry;
+
+    #[contractimpl]
+    impl MockCompositeRegistry {
+        pub fn __constructor(env: Env, agent: Address, merchant: Address, asset: Address) {
+            mock_init(&env, &agent, &merchant, &asset);
+        }
+
+        pub fn count(env: Env) -> u32 {
+            env.storage().instance().get(&KEY_COUNT).unwrap_or(0)
+        }
+
+        pub fn get_mandate(env: Env, mandate_id: BytesN<32>) -> CompositeMandate {
+            CompositeMandate {
+                user: Address::generate(&env),
+                agent: env.storage().instance().get(&KEY_AGENT).unwrap(),
+                merchant: env.storage().instance().get(&KEY_MERCHANT).unwrap(),
+                asset: env.storage().instance().get(&KEY_ASSET).unwrap(),
+                max_amount: 1_000,
+                spent: 0,
+                expiry: NOW + 86_400,
+                seq: 0,
+                status: MandateStatus::Active,
+                vc_hash: mandate_id,
+                pool_id: None,
+                price_schedule: Vec::new(&env),
+                pool_state: MandatePoolState::Released,
+            }
+        }
+
+        pub fn execute_payment(
+            env: Env,
+            _mandate_id: BytesN<32>,
+            amount: i128,
+            _expected_seq: u32,
+        ) {
+            mock_execute(&env, amount);
+        }
+    }
+}
+
+use composite_mock::{MockCompositeRegistry, MockCompositeRegistryClient};
 
 struct World {
     env: Env,
     extension: Address,
     verifier: SigningKey,
     registry: Address,
+    composite_registry: Address,
     agent: Address,
     merchant: Address,
     asset: Address,
@@ -71,20 +164,26 @@ impl World {
         env.ledger().set_network_id(NETWORK);
         let admin = Address::generate(&env);
         let extension = env.register(Ap2AuthorizationExtension, (&admin,));
-        let registry = env.register(MockSimpleRegistry, (&extension,));
+        let agent = Address::generate(&env);
+        let merchant = Address::generate(&env);
+        let asset = Address::generate(&env);
+        let registry = env.register(MockSimpleRegistry, (&extension, &merchant, &asset));
+        let composite_registry =
+            env.register(MockCompositeRegistry, (&extension, &merchant, &asset));
         let verifier = SigningKey::from_bytes(&[7; 32]);
         Ap2AuthorizationExtensionClient::new(&env, &extension).set_verifier(
             &BytesN::from_array(&env, &verifier.verifying_key().to_bytes()),
             &true,
         );
         Self {
-            agent: Address::generate(&env),
-            merchant: Address::generate(&env),
-            asset: Address::generate(&env),
+            agent,
+            merchant,
+            asset,
             env,
             extension,
             verifier,
             registry,
+            composite_registry,
         }
     }
 
@@ -255,6 +354,7 @@ fn composite_solo_route_is_separate_from_simple() {
     let world = World::new();
     let mut authorization = world.capture();
     authorization.kind = CaptureKind::CompositeSolo;
+    authorization.registry = world.composite_registry.clone();
     let id = world.client().capture_id(&authorization);
     let signature = world.sign(&id);
 
@@ -263,7 +363,7 @@ fn composite_solo_route_is_separate_from_simple() {
         .execute_composite_solo(&authorization, &signature);
     assert!(world.client().is_consumed(&id));
     assert_eq!(
-        MockSimpleRegistryClient::new(&world.env, &world.registry).count(),
+        MockCompositeRegistryClient::new(&world.env, &world.composite_registry).count(),
         1
     );
 
@@ -274,6 +374,138 @@ fn composite_solo_route_is_separate_from_simple() {
             .client()
             .try_execute_composite_solo(&simple, &world.sign(&simple_id)),
         Err(Ok(Error::WrongCaptureKind))
+    );
+}
+
+#[test]
+fn registry_mandate_must_agree_with_the_signed_evidence() {
+    let world = World::new();
+    let registry = MockSimpleRegistryClient::new(&world.env, &world.registry);
+
+    // The verifier signed evidence for one payee; the registry mandate names
+    // another. Only mandate_id, amount and expected_seq reach the registry, so
+    // without the read-back this would settle to the mandate's merchant while
+    // the AP2 receipt claimed the other one.
+    registry.set_merchant(&Address::generate(&world.env));
+    let authorization = world.capture();
+    let id = world.client().capture_id(&authorization);
+    assert_eq!(
+        world
+            .client()
+            .try_execute_simple(&authorization, &world.sign(&id)),
+        Err(Ok(Error::RegistryMandateMismatch))
+    );
+    assert!(!world.client().is_consumed(&id));
+    assert_eq!(registry.count(), 0);
+
+    // A mandate whose agent is not this extension would let the shopping agent
+    // spend it directly, skipping the evidence check.
+    registry.set_merchant(&world.merchant);
+    registry.set_agent(&world.agent);
+    assert_eq!(
+        world
+            .client()
+            .try_execute_simple(&authorization, &world.sign(&id)),
+        Err(Ok(Error::RegistryMandateMismatch))
+    );
+
+    // A mismatched asset is refused on the Composite route too.
+    let mut composite = world.capture();
+    composite.kind = CaptureKind::CompositeSolo;
+    composite.registry = world.composite_registry.clone();
+    composite.asset = Address::generate(&world.env);
+    let composite_id = world.client().capture_id(&composite);
+    assert_eq!(
+        world
+            .client()
+            .try_execute_composite_solo(&composite, &world.sign(&composite_id)),
+        Err(Ok(Error::RegistryMandateMismatch))
+    );
+}
+
+#[test]
+fn an_authorization_cannot_outlive_its_replay_marker() {
+    let world = World::new();
+    let mut authorization = world.capture();
+    authorization.not_before = NOW;
+    authorization.expires_at = NOW + MAX_AUTHORIZATION_LIFETIME_SECS + 1;
+    let id = world.client().capture_id(&authorization);
+    assert_eq!(
+        world
+            .client()
+            .try_execute_simple(&authorization, &world.sign(&id)),
+        Err(Ok(Error::AuthorizationTooLong))
+    );
+
+    // Exactly at the bound is still accepted.
+    authorization.expires_at = NOW + MAX_AUTHORIZATION_LIFETIME_SECS;
+    let id = world.client().capture_id(&authorization);
+    world
+        .client()
+        .execute_simple(&authorization, &world.sign(&id));
+    assert!(world.client().is_consumed(&id));
+
+    // Pool participation is bounded by the same rule.
+    let mut participation = world.participation();
+    participation.not_before = NOW;
+    participation.expires_at = NOW + MAX_AUTHORIZATION_LIFETIME_SECS + 1;
+    let participation_id = world.client().participation_id(&participation);
+    assert_eq!(
+        world
+            .client()
+            .try_register_pool_participation(&participation, &world.sign(&participation_id)),
+        Err(Ok(Error::AuthorizationTooLong))
+    );
+}
+
+#[test]
+fn typescript_and_contract_participation_id_vector_match() {
+    let env = Env::default();
+    env.ledger().set_timestamp(NOW);
+    env.ledger().set_network_id(NETWORK);
+    let admin = Address::generate(&env);
+    let extension = env.register(Ap2AuthorizationExtension, (&admin,));
+    let parse_address = |value: &str| Address::from_string(&String::from_str(&env, value));
+    let authorization = PoolParticipationAuthorization {
+        version: AUTHORIZATION_VERSION,
+        network_id: BytesN::from_array(&env, &NETWORK),
+        registry: parse_address("GCFIRY65OQE7DFP5KLNS2PF2LVZMUZYJX4OZIEQ36N2IQANUB5XVYOJR"),
+        pool_id: BytesN::from_array(&env, &[0x10; 32]),
+        mandate_id: BytesN::from_array(&env, &[0x11; 32]),
+        agent: parse_address("GCATS5YOVB6ROX2WUNKGNQ2MP3GMXDMKSG2O4N5CLX3A6W4PZGZZI55U"),
+        merchant: parse_address("GDWUSKGGFDI4FRXK5EBTRECZSVQSSWJHHJOGH6JWG3AUMFFMQ435DIAG"),
+        asset: parse_address("GDFJHLAXAUMHA4OWPOB4P7YO72AQR2HMIUYFOXLXE2DZGM633K7HZDQP"),
+        max_amount: 500,
+        schedule_hash: BytesN::from_array(&env, &[0x12; 32]),
+        open_checkout_evidence: BytesN::from_array(&env, &[0x13; 32]),
+        closed_checkout_evidence: BytesN::from_array(&env, &[0x14; 32]),
+        open_participation_evidence: BytesN::from_array(&env, &[0x15; 32]),
+        closed_participation_evidence: BytesN::from_array(&env, &[0x16; 32]),
+        nonce: BytesN::from_array(&env, &[0x17; 32]),
+        verifier_key: BytesN::from_array(
+            &env,
+            &[
+                0xea, 0x4a, 0x6c, 0x63, 0xe2, 0x9c, 0x52, 0x0a, 0xbe, 0xf5, 0x50, 0x7b, 0x13, 0x2e,
+                0xc5, 0xf9, 0x95, 0x47, 0x76, 0xae, 0xbe, 0xbe, 0x7b, 0x92, 0x42, 0x1e, 0xea, 0x69,
+                0x14, 0x46, 0xd2, 0x2c,
+            ],
+        ),
+        not_before: 1_799_999_999,
+        expires_at: 1_800_000_600,
+    };
+
+    // Pinned against `poolParticipationAuthorizationId` in @reapp-sdk/ap2. The
+    // pooled tests sign in Rust, so only this vector proves a TypeScript
+    // verifier's signature is verifiable by this contract.
+    assert_eq!(
+        Ap2AuthorizationExtensionClient::new(&env, &extension)
+            .participation_id(&authorization)
+            .to_array(),
+        [
+            0x86, 0x27, 0xf6, 0x8f, 0x4e, 0xdd, 0xba, 0x96, 0xb2, 0x4e, 0x26, 0x2b, 0x7f, 0x7d,
+            0x9d, 0x3b, 0x13, 0xd0, 0xe9, 0x6d, 0xdf, 0x8f, 0xdf, 0x67, 0x11, 0x23, 0x04, 0x74,
+            0x66, 0x6b, 0x91, 0x65,
+        ]
     );
 }
 

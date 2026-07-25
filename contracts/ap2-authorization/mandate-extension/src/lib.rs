@@ -9,27 +9,26 @@
 extern crate std;
 
 mod error;
+mod registry;
 mod storage;
 mod types;
 
 pub use error::Error;
+pub use registry::{
+    CompositeMandate, CompositeRegistry, CompositeRegistryClient, MandatePoolState,
+    MandateSchedulePoint, MandateStatus, SimpleMandate, SimpleRegistry, SimpleRegistryClient,
+};
 pub use types::{
     CaptureAuthorization, CaptureKind, PoolCapture, PoolParticipationAuthorization,
-    AUTHORIZATION_VERSION,
+    AUTHORIZATION_VERSION, MAX_AUTHORIZATION_LIFETIME_SECS,
 };
 
 use soroban_sdk::{
-    contract, contractclient, contractimpl, xdr::ToXdr, Address, Bytes, BytesN, Env, IntoVal,
-    Symbol,
+    contract, contractimpl, xdr::ToXdr, Address, Bytes, BytesN, Env, IntoVal, Symbol,
 };
 
 const CAPTURE_DOMAIN: &[u8] = b"REAPP\0AP2\0CAPTURE\0V1\0";
 const PARTICIPATION_DOMAIN: &[u8] = b"REAPP\0AP2\0POOL-PARTICIPATION\0V1\0";
-
-#[contractclient(name = "SimpleRegistryClient")]
-pub trait SimpleRegistry {
-    fn execute_payment(env: Env, mandate_id: BytesN<32>, amount: i128, expected_seq: u32);
-}
 
 #[contract]
 pub struct Ap2AuthorizationExtension;
@@ -48,11 +47,17 @@ impl Ap2AuthorizationExtension {
         let admin = storage::get_admin(&env);
         admin.require_auth();
         storage::set_admin(&env, &new_admin);
+        // The admin owns the verifier allowlist, which is this contract's whole
+        // trust root. Both changes to it must be observable on-chain.
+        env.events()
+            .publish((Symbol::new(&env, "ap2_admin"),), (admin, new_admin));
     }
 
     pub fn set_verifier(env: Env, verifier_key: BytesN<32>, enabled: bool) {
         storage::get_admin(&env).require_auth();
         storage::set_verifier(&env, &verifier_key, enabled);
+        env.events()
+            .publish((Symbol::new(&env, "ap2_verifier"), verifier_key), enabled);
     }
 
     pub fn verifier_enabled(env: Env, verifier_key: BytesN<32>) -> bool {
@@ -190,11 +195,45 @@ fn execute_solo(
     // The registry stores this extension as its agent. A direct call from this
     // contract therefore satisfies require_auth(agent); the registry still
     // checks sequence, scope, budget, expiry, state, and allowance.
-    SimpleRegistryClient::new(env, &authorization.registry).execute_payment(
-        &authorization.mandate_id,
-        &authorization.amount,
-        &authorization.expected_seq,
-    );
+    //
+    // Read the mandate back first. Only `mandate_id`, `amount` and
+    // `expected_seq` reach the registry, so without this the merchant and asset
+    // a verifier signed into the authorization would never be compared against
+    // the mandate the money actually moves under.
+    match authorization.kind {
+        CaptureKind::Simple => {
+            let client = SimpleRegistryClient::new(env, &authorization.registry);
+            let mandate = client.get_mandate(&authorization.mandate_id);
+            require_registry_agrees(
+                env,
+                &authorization,
+                &mandate.agent,
+                &mandate.merchant,
+                &mandate.asset,
+            )?;
+            client.execute_payment(
+                &authorization.mandate_id,
+                &authorization.amount,
+                &authorization.expected_seq,
+            );
+        }
+        CaptureKind::CompositeSolo => {
+            let client = CompositeRegistryClient::new(env, &authorization.registry);
+            let mandate = client.get_mandate(&authorization.mandate_id);
+            require_registry_agrees(
+                env,
+                &authorization,
+                &mandate.agent,
+                &mandate.merchant,
+                &mandate.asset,
+            )?;
+            client.execute_payment(
+                &authorization.mandate_id,
+                &authorization.amount,
+                &authorization.expected_seq,
+            );
+        }
+    }
     env.events().publish(
         (Symbol::new(env, "ap2_capture"), id),
         (
@@ -203,6 +242,25 @@ fn execute_solo(
             authorization.amount,
         ),
     );
+    Ok(())
+}
+
+/// The registry mandate must be the one the AP2 evidence describes, and it must
+/// name this extension as its agent — otherwise the shopping agent could spend
+/// the mandate directly and skip the evidence check entirely.
+fn require_registry_agrees(
+    env: &Env,
+    authorization: &CaptureAuthorization,
+    agent: &Address,
+    merchant: &Address,
+    asset: &Address,
+) -> Result<(), Error> {
+    if *agent != env.current_contract_address()
+        || *merchant != authorization.merchant
+        || *asset != authorization.asset
+    {
+        return Err(Error::RegistryMandateMismatch);
+    }
     Ok(())
 }
 
@@ -249,6 +307,14 @@ fn validate_common(
     let now = env.ledger().timestamp();
     if not_before > now || expires_at <= now || not_before >= expires_at {
         return Err(Error::InvalidWindow);
+    }
+    // A replay marker is only useful while it is still stored. Soroban caps a
+    // TTL extension at the network's max entry TTL, so an authorization allowed
+    // to outlive that cap could have its `Consumed` marker archived while the
+    // authorization itself was still valid. Bound the lifetime instead of
+    // relying on archival behavior.
+    if expires_at - not_before > MAX_AUTHORIZATION_LIFETIME_SECS {
+        return Err(Error::AuthorizationTooLong);
     }
     if !storage::verifier_enabled(env, verifier_key) {
         return Err(Error::VerifierDisabled);
